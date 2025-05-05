@@ -1,0 +1,195 @@
+body {
+    font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Fira Sans,Droid Sans,Helvetica Neue,sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+
+.fortify-report {
+    max-width: 1400px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    padding: 20px;
+}
+
+.header {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #e5e5e5;
+    padding-bottom: 15px;
+    
+    h2 {
+        margin: 0;
+        color: #333;
+        font-size: 24px;
+    }
+    
+    .app-info {
+        margin-top: 8px;
+        color: #666;
+        font-size: 14px;
+    }
+}
+
+.controls {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    
+    .filter-group {
+        display: flex;
+        gap: 10px;
+    }
+    
+    .filter-select {
+        padding: 6px 12px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: white;
+        min-width: 150px;
+    }
+    
+    .refresh-btn {
+        padding: 6px 16px;
+        background: #0078d4;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        
+        &:hover {
+            background: #106ebe;
+        }
+    }
+}
+
+.stats-summary {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    
+    .stat-card {
+        background: white;
+        border: 1px solid #e5e5e5;
+        border-radius: 4px;
+        padding: 16px;
+        min-width: 120px;
+        text-align: center;
+        
+        &.critical {
+            border-color: #d13438;
+            background: #fdf6f6;
+        }
+        
+        &.high {
+            border-color: #ff8c00;
+            background: #fff9f0;
+        }
+        
+        &.medium {
+            border-color: #ffd700;
+            background: #fffef0;
+        }
+        
+        &.low {
+            border-color: #0078d4;
+            background: #f0f8ff;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+    }
+}
+
+.issues-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    
+    th {
+        background: #f5f5f5;
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid #e5e5e5;
+    }
+    
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #e5e5e5;
+    }
+    
+    tr:hover {
+        background: #f9f9f9;
+    }
+    
+    .priority-cell {
+        font-weight: 500;
+        
+        &.Critical {
+            color: #d13438;
+        }
+        
+        &.High {
+            color: #ff8c00;
+        }
+        
+        &.Medium {
+            color: #daa520;
+        }
+        
+        &.Low {
+            color: #0078d4;
+        }
+    }
+    
+    .tag-cell {
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-right: 4px;
+            
+            &.exploitable {
+                background: #fee;
+                color: #d13438;
+                border: 1px solid #d13438;
+            }
+            
+            &.suspicious {
+                background: #fff9e6;
+                color: #ff8c00;
+                border: 1px solid #ff8c00;
+            }
+        }
+    }
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+.error {
+    background: #fef2f2;
+    border: 1px solid #feb2b2;
+    color: #9b2c2c;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.hidden {
+    display: none;
+}

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2015",
+    "declaration": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist/report",
+    "lib": ["es2015", "dom"],
+    "rootDir": "./src/report"
+  },
+  "include": ["src/report/**/*"],
+  "exclude": ["node_modules", "src/task"]
+}

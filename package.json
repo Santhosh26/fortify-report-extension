@@ -1,0 +1,41 @@
+{
+  "name": "fortify-report-extension",
+  "version": "7.0.0",
+  "description": "Fortify SSC Report for Azure DevOps",
+  "main": "index.js",
+  "scripts": {
+    "clean": "if exist dist rmdir /s /q dist",
+    "build": "npm run clean && npm run build-task && npm run build-report",
+    "build-task": "webpack",
+    "build-report": "tsc && npm run compile-scss && npm run copy-html",
+    "compile-scss": "npx sass src/report/report.scss dist/report/report.css",
+    "copy-html": "copy src\\report\\report.html dist\\report\\",
+    "package": "npm run build && tfx extension create --manifest-globs vss-extension.json",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "fortify",
+    "azure",
+    "devops",
+    "security"
+  ],
+  "author": "Santhosh Kumar",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "azure-pipelines-task-lib": "^3.0.0",
+    "copy-webpack-plugin": "^13.0.0",
+    "sass": "^1.87.0",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.8.3",
+    "webpack": "^5.99.7",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "azure-devops-extension-api": "^4.251.0",
+    "azure-devops-extension-sdk": "^4.0.2",
+    "azure-pipelines-task-lib": "^4.13.0"
+  }
+}
