@@ -1,13 +1,12 @@
 const path = require('path');
-const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = {
-  entry: './src/task/task.ts',
+  entry: './src/report/report.ts',
   mode: 'production',
-  target: 'node',
+  target: 'web',
   output: {
-    path: path.resolve(__dirname, 'dist/task'),
-    filename: 'task.js'
+    path: path.resolve(__dirname, 'dist/report'),
+    filename: 'report.js'
   },
   resolve: {
     extensions: ['.ts', '.js']
@@ -33,15 +32,5 @@ module.exports = {
         exclude: /node_modules/
       }
     ]
-  },
-  plugins: [
-    new CopyPlugin({
-      patterns: [
-        { 
-          from: 'src/task/task.json', 
-          to: 'task.json' 
-        }
-      ]
-    })
-  ]
+  }
 };

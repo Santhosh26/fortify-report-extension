@@ -1,4 +1,6 @@
 import * as SDK from "azure-devops-extension-sdk";
+import { getClient } from "azure-devops-extension-api";
+import { BuildRestClient } from "azure-devops-extension-api/Build";
 
 interface ReportConfiguration {
     dataPath: string;
@@ -25,22 +27,13 @@ interface ReportData {
 }
 
 let reportData: ReportData | null = null;
-
 async function initialize() {
     await SDK.init();
+    await SDK.ready();
     
     try {
-        // Try to get data from task variable first
-        const reportDataValue = SDK.getConfiguration().context.inputs?.env?.variables?.FORTIFY_REPORT_DATA;
-        
-        if (reportDataValue) {
-            reportData = JSON.parse(reportDataValue);
-            console.log("Loaded data from task variable");
-        } else {
-            console.log("No data found, using mock data");
-            reportData = getMockData();
-        }
-        
+        // Load data from attachments instead of pipeline variables
+        await loadReportData();
         await displayReport();
         setupEventListeners();
     } catch (error) {
@@ -53,20 +46,50 @@ async function initialize() {
 
 async function loadReportData(): Promise<void> {
     try {
-        const config = SDK.getConfiguration();
-        let data = config.data as ReportData | undefined;
+        // Get the access token
+        const accessToken = await SDK.getAccessToken();
+        const appToken = await SDK.getAppToken();
         
-        // Try to get data from configuration first
-        if (data) {
-            reportData = data;
-            console.log("Loaded data from configuration");
-            return;
+        // Get build information
+        const webContext = SDK.getWebContext();
+        const projectId = webContext.project.id;
+        const buildId = await SDK.getConfiguration().buildId;
+        
+        // Create a client to access build APIs
+        const buildClient = getClient(BuildRestClient);
+        
+        // Get attachments
+        const attachments = await buildClient.getAttachments(
+            projectId,
+            buildId,
+            'fortify-report' // attachment type
+        );
+        
+        if (attachments && attachments.length > 0) {
+            // Find the reportData.json attachment
+            const reportDataAttachment = attachments.find(a => a.name === 'reportData.json');
+            
+            if (reportDataAttachment) {
+                // Download the attachment
+                const attachmentContent = await buildClient.getAttachment(
+                    projectId,
+                    buildId,
+                    attachments[0].name, // Using 'name' as the unique identifier for the attachment
+                    attachments[0].id, // Corrected property name based on Attachment type
+                    'fortify-report',
+                    'reportData.json'
+                );
+                
+                // Parse the content
+                const content = new TextDecoder().decode(attachmentContent);
+                reportData = JSON.parse(content);
+                console.log("Loaded data from attachment");
+                return;
+            }
         }
         
-        // If no data in config, we need to fetch from attachments
-        // This would require additional setup with VSS service references
+        console.log("No attachment data found, using mock data");
         reportData = getMockData();
-        console.log("No data found, using mock data");
         
     } catch (error) {
         console.error('Failed to load report data:', error);
