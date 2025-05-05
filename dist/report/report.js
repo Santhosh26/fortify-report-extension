@@ -46,16 +46,17 @@ const SDK = __importStar(require("azure-devops-extension-sdk"));
 let reportData = null;
 function initialize() {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c;
         yield SDK.init();
         try {
-            // Get the configuration
-            const config = SDK.getConfiguration();
-            // Check if we have build context
-            if (config.context) {
-                yield loadReportData();
+            // Try to get data from task variable first
+            const reportDataValue = (_c = (_b = (_a = SDK.getConfiguration().context.inputs) === null || _a === void 0 ? void 0 : _a.env) === null || _b === void 0 ? void 0 : _b.variables) === null || _c === void 0 ? void 0 : _c.FORTIFY_REPORT_DATA;
+            if (reportDataValue) {
+                reportData = JSON.parse(reportDataValue);
+                console.log("Loaded data from task variable");
             }
             else {
-                console.log("No context found, using mock data");
+                console.log("No data found, using mock data");
                 reportData = getMockData();
             }
             yield displayReport();
