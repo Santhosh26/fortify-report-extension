@@ -30,14 +30,14 @@ async function initialize() {
     await SDK.init();
     
     try {
-        // Get the configuration
-        const config = SDK.getConfiguration();
+        // Try to get data from task variable first
+        const reportDataValue = SDK.getConfiguration().context.inputs?.env?.variables?.FORTIFY_REPORT_DATA;
         
-        // Check if we have build context
-        if (config.context) {
-            await loadReportData();
+        if (reportDataValue) {
+            reportData = JSON.parse(reportDataValue);
+            console.log("Loaded data from task variable");
         } else {
-            console.log("No context found, using mock data");
+            console.log("No data found, using mock data");
             reportData = getMockData();
         }
         
