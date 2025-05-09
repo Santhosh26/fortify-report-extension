@@ -1,12 +1,12 @@
 {
   "name": "fortify-report-extension",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "description": "Fortify SSC Report for Azure DevOps",
   "main": "index.js",
   "scripts": {
     "clean": "if exist dist rmdir /s /q dist",
     "build": "npm run clean && npm run build-task && npm run build-report",
-    "build-task": "webpack",
+    "build-task": "webpack --config webpack.task.config.js",
     "build-report": "webpack --config webpack.report.config.js && npm run compile-scss && npm run copy-html",
     "compile-scss": "npx sass src/report/report.scss dist/report/report.css",
     "copy-html": "copy src\\report\\report.html dist\\report\\",
@@ -24,7 +24,6 @@
   "type": "commonjs",
   "devDependencies": {
     "@types/node": "^22.15.3",
-    "azure-pipelines-task-lib": "^3.0.0",
     "copy-webpack-plugin": "^13.0.0",
     "sass": "^1.87.0",
     "ts-loader": "^9.5.2",

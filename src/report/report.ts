@@ -1,9 +1,15 @@
+// src/report/report.ts
 import * as SDK from "azure-devops-extension-sdk";
 import { getClient } from "azure-devops-extension-api";
-import { BuildRestClient } from "azure-devops-extension-api/Build";
+import { BuildRestClient } from "azure-devops-extension-api/Build"; 
 
-interface ReportConfiguration {
-    dataPath: string;
+// Define our own interface for attachments to match the actual API
+interface AttachmentResponse {
+    name: string;
+    recordId: string;
+    timelineId: string;
+    _links: any;
+    [key: string]: any; // Allow any other properties that might exist
 }
 
 interface FortifyIssue {
@@ -27,105 +33,139 @@ interface ReportData {
 }
 
 let reportData: ReportData | null = null;
+
 async function initialize() {
-    await SDK.init();
+    await SDK.init({ loaded: false }); // Manual notification for load status
     await SDK.ready();
-    
+    console.log("Fortify Report Tab: SDK initialized and ready.");
+
     try {
-        // Load data from attachments instead of pipeline variables
-        await loadReportData();
-        await displayReport();
-        setupEventListeners();
+        await loadReportData(); // This will set global reportData or use mock data
+        
+        if (reportData) { // Ensure reportData is populated (either real or mock)
+            await displayReport();
+            setupEventListeners();
+            SDK.notifyLoadSucceeded();
+            console.log("Fortify Report Tab: Load succeeded.");
+        } else {
+            // This case should ideally be handled within loadReportData by setting mock data
+            // and calling notifyLoadFailed if truly unrecoverable.
+            // However, as a fallback:
+            showError("Critical error: Report data could not be initialized.");
+            SDK.notifyLoadFailed("Critical error: Report data initialization failed.");
+            console.error("Fortify Report Tab: Load failed - reportData is null after loadReportData.");
+        }
     } catch (error) {
-        console.error('Initialization error:', error);
-        reportData = getMockData();
-        displayReport();
-        setupEventListeners();
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('Fortify Report Tab: Initialization error:', errorMessage, error);
+        showError(`Initialization error: ${errorMessage}`);
+        // Attempt to display mock data even on initialization error if possible
+        try {
+            reportData = getMockData(`Initialization error: ${errorMessage}`);
+            await displayReport(); // displayReport now handles null reportData gracefully
+            setupEventListeners(); // Setup event listeners for mock data interaction
+        } catch (displayError) {
+            const displayErrorMessage = displayError instanceof Error ? displayError.message : String(displayError);
+            console.error('Fortify Report Tab: Error displaying mock data after init failure:', displayErrorMessage);
+            showError(`Initialization failed: ${errorMessage}. Mock data display also failed: ${displayErrorMessage}`);
+        }
+        SDK.notifyLoadFailed(`Initialization error: ${errorMessage}`);
     }
 }
 
 async function loadReportData(): Promise<void> {
     try {
-        // Get the access token
-        const accessToken = await SDK.getAccessToken();
-        const appToken = await SDK.getAppToken();
-        
-        // Get build information
         const webContext = SDK.getWebContext();
         const projectId = webContext.project.id;
-        const buildId = await SDK.getConfiguration().buildId;
         
-        // Create a client to access build APIs
+        // Get build information from SDK.getConfiguration() as webContext.build might be for the overall page context
+        const config = SDK.getConfiguration();
+        const build = config.build;
+
+        if (!build || !build.id) {
+            console.warn("Fortify Report Tab: Build context or Build ID not available. Using mock data.");
+            reportData = getMockData("Build context/ID not available.");
+            // No need to call notifyLoadFailed here, initialize will handle it based on reportData
+            return;
+        }
+        const buildId = build.id;
+        console.log(`Fortify Report Tab: ProjectId: ${projectId}, BuildId: ${buildId}`);
+
         const buildClient = getClient(BuildRestClient);
-        
-        // Get attachments
-        const attachments = await buildClient.getAttachments(
-            projectId,
-            buildId,
-            'fortify-report' // attachment type
-        );
-        
+        const attachmentType = 'fortify-report'; // Must match the type used in tl.addAttachment in the task
+
+        console.log(`Fortify Report Tab: Fetching attachments for Type: ${attachmentType}`);
+        // Use any type and then cast to our interface to avoid TypeScript errors
+        const attachments = await buildClient.getAttachments(projectId, buildId, attachmentType) as AttachmentResponse[];
+
         if (attachments && attachments.length > 0) {
-            // Find the reportData.json attachment
+            console.log(`Fortify Report Tab: Found ${attachments.length} attachments of type '${attachmentType}'.`);
+            attachments.forEach((att, index) => {
+                console.log(`Fortify Report Tab: Attachment ${index}: Name: ${att.name}, RecordId: ${att.recordId}, TimelineId: ${att.timelineId}, Links: ${JSON.stringify(att._links)}`);
+            });
+
             const reportDataAttachment = attachments.find(a => a.name === 'reportData.json');
-            
+
             if (reportDataAttachment) {
-                // Download the attachment
-                const attachmentContent = await buildClient.getAttachment(
+                console.log(`Fortify Report Tab: Found 'reportData.json' attachment. RecordId: ${reportDataAttachment.recordId}, TimelineId: ${reportDataAttachment.timelineId}`);
+                
+                if (!reportDataAttachment.recordId || !reportDataAttachment.timelineId) {
+                    console.error("Fortify Report Tab: 'reportData.json' attachment is missing recordId or timelineId.", reportDataAttachment);
+                    reportData = getMockData("Attachment 'reportData.json' is invalid (missing record/timeline ID).");
+                    return;
+                }
+
+                const attachmentContent: ArrayBuffer = await buildClient.getAttachment(
                     projectId,
                     buildId,
-                    attachments[0].name, // Using 'name' as the unique identifier for the attachment
-                    attachments[0].id, // Corrected property name based on Attachment type
-                    'fortify-report',
-                    'reportData.json'
+                    reportDataAttachment.timelineId,
+                    reportDataAttachment.recordId,
+                    attachmentType,
+                    reportDataAttachment.name
                 );
-                
-                // Parse the content
+
                 const content = new TextDecoder().decode(attachmentContent);
                 reportData = JSON.parse(content);
-                console.log("Loaded data from attachment");
-                return;
+                console.log("Fortify Report Tab: Successfully loaded and parsed data from attachment:", reportDataAttachment.name);
+                return; // Successfully loaded
+            } else {
+                console.warn("Fortify Report Tab: 'reportData.json' not found among attachments. Using mock data.");
+                reportData = getMockData("Attachment 'reportData.json' not found.");
             }
+        } else {
+            console.warn(`Fortify Report Tab: No attachments found for type '${attachmentType}'. Using mock data.`);
+            reportData = getMockData(`No attachments of type '${attachmentType}' found.`);
         }
-        
-        console.log("No attachment data found, using mock data");
-        reportData = getMockData();
-        
     } catch (error) {
-        console.error('Failed to load report data:', error);
-        reportData = getMockData();
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('Fortify Report Tab: Failed to load report data from attachment:', errorMessage, error);
+        reportData = getMockData(`Failed to load report from attachment: ${errorMessage}`);
     }
 }
 
 async function displayReport() {
-    try {
-        showLoading(true);
-        
-        if (reportData) {
-            renderReport(reportData);
-        } else {
-            reportData = getMockData();
-            renderReport(reportData);
-        }
-        
-        showLoading(false);
-    } catch (error) {
-        showError('Failed to load report data');
-        showLoading(false);
+    showLoading(true);
+
+    if (!reportData) {
+        console.warn("Fortify Report Tab: displayReport called but reportData is null. Attempting to use fresh mock data.");
+        // This is a fallback, ideally loadReportData should always set reportData (even if mock)
+        reportData = getMockData("Report data was unexpectedly null during display.");
+        showError("Report data was not available. Displaying placeholder data.");
     }
+    
+    // At this point, reportData should be non-null (either real or mock)
+    renderReport(reportData);
+    showLoading(false);
+    console.log("Fortify Report Tab: Report displayed.");
 }
 
 function renderReport(data: ReportData) {
-    // Update app info
-    const appInfo = document.getElementById('app-info');
-    if (appInfo) {
-        appInfo.textContent = `Application: ${data.appName} - Version: ${data.appVersion} - Scan Date: ${new Date(data.scanDate).toLocaleDateString()}`;
+    const appInfoEl = document.getElementById('app-info');
+    if (appInfoEl) {
+        appInfoEl.textContent = `Application: ${data.appName} - Version: ${data.appVersion} - Scan Date: ${new Date(data.scanDate).toLocaleDateString()}`;
     }
-    
-    // Update stats
+
     updateStats(data.issues);
-    
-    // Render issues table
     renderIssuesTable(data.issues);
 }
 
@@ -137,67 +177,51 @@ function updateStats(issues: FortifyIssue[]) {
         medium: issues.filter(i => i.priority === 'Medium').length,
         low: issues.filter(i => i.priority === 'Low').length
     };
-    
-    const totalElem = document.getElementById('total-issues');
-    const criticalElem = document.getElementById('critical-issues');
-    const highElem = document.getElementById('high-issues');
-    const mediumElem = document.getElementById('medium-issues');
-    const lowElem = document.getElementById('low-issues');
-    
-    if (totalElem) totalElem.textContent = stats.total.toString();
-    if (criticalElem) criticalElem.textContent = stats.critical.toString();
-    if (highElem) highElem.textContent = stats.high.toString();
-    if (mediumElem) mediumElem.textContent = stats.medium.toString();
-    if (lowElem) lowElem.textContent = stats.low.toString();
+
+    document.getElementById('total-issues')!.textContent = stats.total.toString();
+    document.getElementById('critical-issues')!.textContent = stats.critical.toString();
+    document.getElementById('high-issues')!.textContent = stats.high.toString();
+    document.getElementById('medium-issues')!.textContent = stats.medium.toString();
+    document.getElementById('low-issues')!.textContent = stats.low.toString();
 }
 
 function renderIssuesTable(issues: FortifyIssue[]) {
-    const tbody = document.getElementById('issues-tbody');
-    if (!tbody) return;
-    
-    tbody.innerHTML = '';
-    
+    const tbody = document.getElementById('issues-tbody') as HTMLTableSectionElement;
+    if (!tbody) {
+        console.error("Fortify Report Tab: Issues table body 'issues-tbody' not found.");
+        return;
+    }
+
+    tbody.innerHTML = ''; // Clear existing rows
+
+    if (issues.length === 0) {
+        const row = tbody.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 5; // Span across all columns
+        cell.textContent = "No issues found matching the current criteria.";
+        cell.style.textAlign = "center";
+        return;
+    }
+
     issues.forEach(issue => {
-        const row = document.createElement('tr');
+        const row = tbody.insertRow();
+
+        row.insertCell().textContent = issue.category || issue.issueName;
+        row.insertCell().textContent = `${issue.primaryLocation}:${issue.lineNumber}`;
+        row.insertCell().textContent = issue.kingdom || 'N/A'; // Using kingdom for Analysis Type, adjust if needed
         
-        // Category
-        const categoryCell = document.createElement('td');
-        categoryCell.textContent = issue.category || issue.issueName;
-        row.appendChild(categoryCell);
-        
-        // Primary Location
-        const locationCell = document.createElement('td');
-        locationCell.textContent = `${issue.primaryLocation}:${issue.lineNumber}`;
-        row.appendChild(locationCell);
-        
-        // Analysis Type
-        const analysisCell = document.createElement('td');
-        analysisCell.textContent = 'SCA'; // Static Code Analysis
-        row.appendChild(analysisCell);
-        
-        // Priority
-        const priorityCell = document.createElement('td');
+        const priorityCell = row.insertCell();
         priorityCell.textContent = issue.priority;
         priorityCell.className = `priority-cell ${issue.priority}`;
-        row.appendChild(priorityCell);
         
-        // Tagged
-        const tagCell = document.createElement('td');
+        const tagCell = row.insertCell();
         tagCell.className = 'tag-cell';
-        
-        // Add tags based on issue characteristics
         if (issue.likelihood === 'Likely' || issue.confidence === 'High') {
-            const exploitableTag = createTag('Exploitable', 'exploitable');
-            tagCell.appendChild(exploitableTag);
+            tagCell.appendChild(createTag('Exploitable', 'exploitable'));
         }
-        
-        if (issue.confidence === 'Low') {
-            const suspiciousTag = createTag('Suspicious', 'suspicious');
-            tagCell.appendChild(suspiciousTag);
+        if (issue.confidence === 'Low') { // Or other criteria for "Suspicious"
+            tagCell.appendChild(createTag('Suspicious', 'suspicious'));
         }
-        
-        row.appendChild(tagCell);
-        tbody.appendChild(row);
     });
 }
 
@@ -209,87 +233,79 @@ function createTag(text: string, className: string): HTMLSpanElement {
 }
 
 function setupEventListeners() {
-    // Refresh button
-    document.getElementById('refresh-btn')?.addEventListener('click', displayReport);
-    
-    // Filters
+    document.getElementById('refresh-btn')?.addEventListener('click', async () => {
+        console.log("Fortify Report Tab: Refresh button clicked.");
+        // Re-fetch and display. loadReportData will update global 'reportData'.
+        await loadReportData(); 
+        await displayReport(); 
+    });
+
     const severityFilter = document.getElementById('severity-filter') as HTMLSelectElement;
     const priorityFilter = document.getElementById('priority-filter') as HTMLSelectElement;
-    
+
     [severityFilter, priorityFilter].forEach(filter => {
         filter?.addEventListener('change', applyFilters);
     });
+    console.log("Fortify Report Tab: Event listeners set up.");
 }
 
 function applyFilters() {
-    if (!reportData) return;
-    
-    const severityFilter = (document.getElementById('severity-filter') as HTMLSelectElement).value;
-    const priorityFilter = (document.getElementById('priority-filter') as HTMLSelectElement).value;
-    
+    if (!reportData) {
+        console.warn("Fortify Report Tab: applyFilters called but reportData is null.");
+        showError("Cannot apply filters: report data is not loaded.");
+        return;
+    }
+    console.log("Fortify Report Tab: Applying filters...");
+
+    const severityFilterValue = (document.getElementById('severity-filter') as HTMLSelectElement).value;
+    const priorityFilterValue = (document.getElementById('priority-filter') as HTMLSelectElement).value;
+
     let filteredIssues = reportData.issues;
-    
-    if (severityFilter) {
-        filteredIssues = filteredIssues.filter(issue => issue.severity === severityFilter);
+
+    if (severityFilterValue) {
+        filteredIssues = filteredIssues.filter(issue => issue.severity === severityFilterValue);
     }
-    
-    if (priorityFilter) {
-        filteredIssues = filteredIssues.filter(issue => issue.priority === priorityFilter);
+    if (priorityFilterValue) {
+        filteredIssues = filteredIssues.filter(issue => issue.priority === priorityFilterValue);
     }
-    
+
     renderIssuesTable(filteredIssues);
-    updateStats(filteredIssues);
+    updateStats(filteredIssues); // Update stats based on filtered issues
 }
 
 function showLoading(show: boolean) {
-    const loading = document.getElementById('loading');
-    const issuesTable = document.getElementById('issues-table');
-    
-    if (loading && issuesTable) {
-        loading.style.display = show ? 'block' : 'none';
-        issuesTable.style.display = show ? 'none' : 'table';
-    }
+    const loadingEl = document.getElementById('loading');
+    const issuesTableEl = document.getElementById('issues-table');
+    const controlsEl = document.querySelector('.controls') as HTMLElement; // More specific selector
+    const statsSummaryEl = document.getElementById('stats-summary');
+
+
+    if (loadingEl) loadingEl.style.display = show ? 'block' : 'none';
+    if (issuesTableEl) issuesTableEl.style.display = show ? 'none' : 'table';
+    if (controlsEl) controlsEl.style.display = show ? 'none' : 'flex'; // Assuming controls are flex
+    if (statsSummaryEl) statsSummaryEl.style.display = show ? 'none' : 'flex'; // Assuming stats are flex
 }
 
 function showError(message: string) {
-    const error = document.getElementById('error');
-    if (error) {
-        error.textContent = message;
-        error.classList.remove('hidden');
+    const errorEl = document.getElementById('error');
+    if (errorEl) {
+        errorEl.textContent = message;
+        errorEl.classList.remove('hidden');
     }
+    console.error("Fortify Report Tab: UI Error Displayed - ", message);
 }
 
-// Mock data for testing
-function getMockData(): ReportData {
+// Mock data for testing and fallback
+function getMockData(reason: string = "Using mock data as fallback."): ReportData {
+    console.warn(`Fortify Report Tab: Providing mock data. Reason: ${reason}`);
     return {
         issues: [
-            {
-                id: '1',
-                issueName: 'HTML5: Missing Framing Protection',
-                severity: 'High',
-                priority: 'Critical',
-                likelihood: 'Likely',
-                confidence: 'High',
-                primaryLocation: 'src/main/java/com/mic...onfiguration.java',
-                lineNumber: 148,
-                kingdom: 'Security',
-                category: 'HTML5'
-            },
-            {
-                id: '2',
-                issueName: 'Cross-Site Scripting: Persistent',
-                severity: 'High',
-                priority: 'Critical',
-                likelihood: 'Likely',
-                confidence: 'Medium',
-                primaryLocation: 'src/main/java/com/mic...erController.java',
-                lineNumber: 131,
-                kingdom: 'Input Validation',
-                category: 'XSS'
-            }
+            { id: 'M1', issueName: 'Mock Issue: SQL Injection', severity: 'Critical', priority: 'Critical', likelihood: 'Likely', confidence: 'High', primaryLocation: 'mock/Login.java', lineNumber: 101, kingdom: 'Input Validation', category: 'A1-Injection' },
+            { id: 'M2', issueName: 'Mock Issue: XSS Basic', severity: 'High', priority: 'High', likelihood: 'Possible', confidence: 'Medium', primaryLocation: 'mock/Profile.jsp', lineNumber: 55, kingdom: 'Environment', category: 'A7-XSS' },
+            { id: 'M3', issueName: 'Mock Issue: Weak Hashing', severity: 'Medium', priority: 'Medium', likelihood: 'Unlikely', confidence: 'Low', primaryLocation: 'mock/utils/Crypto.cs', lineNumber: 23, kingdom: 'Security Features', category: 'Password Management' }
         ],
-        appName: 'TestApp',
-        appVersion: '1.0.0',
+        appName: 'MockApp',
+        appVersion: '0.0.0',
         scanDate: new Date().toISOString()
     };
 }
