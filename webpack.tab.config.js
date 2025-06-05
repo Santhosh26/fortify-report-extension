@@ -1,47 +1,73 @@
-const path = require('path');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
+const path = require("path");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
 
 module.exports = {
-  entry: './src/task/task.ts',
-  mode: 'production',
-  target: 'node',
-  output: {
-    path: path.resolve(__dirname, 'dist/task'),
-    filename: 'task.js',
-    libraryTarget: 'commonjs2'
-  },
-  resolve: {
-    extensions: ['.ts', '.js']
-  },
-  module: {
-    rules: [
-      {
-        test: /\.ts$/,
-        use: {
-          loader: 'ts-loader',
-          options: {
-            compilerOptions: {
-              module: 'commonjs',
-              target: 'es2021',
-              declaration: false,
-              esModuleInterop: true,
-              skipLibCheck: true,
-              strict: true
-            }
-          }
+    entry: {
+       tabContent: "./src/tabContent.tsx",
+    },
+    mode: 'production',
+    target: 'web',
+    
+    resolve: {
+        extensions: [".ts", ".tsx", ".js"],
+        alias: {
+            "azure-devops-extension-sdk": path.resolve("node_modules/azure-devops-extension-sdk")
         },
-        exclude: /node_modules/
-      }
+    },
+    
+    output: {
+        path: path.resolve(__dirname, 'dist'),
+        filename: '[name].js'
+    },
+    
+    stats: {
+        warnings: false
+    },
+    
+    module: {
+        rules: [
+            {
+                test: /\.tsx?$/,
+                use: {
+                    loader: "ts-loader",
+                    options: {
+                        transpileOnly: true
+                    }
+                },
+                exclude: /node_modules/
+            },
+            {
+                test: /\.scss$/,
+                use: [
+                    "style-loader", 
+                    "css-loader", 
+                    "azure-devops-ui/buildScripts/css-variables-loader", 
+                    "sass-loader"
+                ]
+            },
+            {
+                test: /\.css$/,
+                use: ["style-loader", "css-loader"],
+            },
+            {
+                test: /\.(woff|woff2|eot|ttf|otf)$/,
+                use: [{
+                    loader: 'file-loader',
+                    options: {
+                        name: '[name].[ext]'
+                    }
+                }]
+            },
+            {
+                test: /\.html$/,
+                loader: "file-loader"
+            }
+        ]
+    },
+    
+    plugins: [
+        new CopyWebpackPlugin([
+            { from: "src/tabContent.html", to: "tabContent.html" },
+        ])
     ]
-  },
-  plugins: [
-    new CopyWebpackPlugin({
-      patterns: [
-        { from: 'src/task/task.json', to: 'task.json' }
-      ]
-    })
-  ],
-  stats: {
-    warnings: false
-  }
 };

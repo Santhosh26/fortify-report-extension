@@ -20,14 +20,7 @@ module.exports = {
         use: {
           loader: 'ts-loader',
           options: {
-            compilerOptions: {
-              module: 'commonjs',
-              target: 'es2021',
-              declaration: false,
-              esModuleInterop: true,
-              skipLibCheck: true,
-              strict: true
-            }
+            transpileOnly: true
           }
         },
         exclude: /node_modules/
@@ -35,11 +28,9 @@ module.exports = {
     ]
   },
   plugins: [
-    new CopyWebpackPlugin({
-      patterns: [
-        { from: 'src/task/task.json', to: 'task.json' }
-      ]
-    })
+    new CopyWebpackPlugin([
+      { from: 'src/task/task.json', to: 'task.json' }
+    ])
   ],
   stats: {
     warnings: false

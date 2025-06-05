@@ -2,15 +2,13 @@
   "compilerOptions": {
     "module": "commonjs",
     "moduleResolution": "node",
-    "target": "es2015",
+    "target": "es6",
     "outDir": "dist/",
     "jsx": "react",
     "declaration": false,
-    "strict": true,
+    "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "lib": ["es2015", "dom", "dom.iterable"],
     "types": [
         "react",
         "node"
