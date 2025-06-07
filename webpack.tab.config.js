@@ -67,7 +67,7 @@ module.exports = {
     
     plugins: [
         new CopyWebpackPlugin([
-            { from: "src/tabContent.html", to: "tabContent.html" },
+            { from: "src/tabContent.html", to: "tabContent.html" }
         ])
     ]
 };

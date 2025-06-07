@@ -129,6 +129,7 @@ class BuildAttachmentClient extends AttachmentClient {
 }
 
 // Fortify SSC API Client
+// Enhanced Fortify SSC API Client (for tabContent.tsx)
 class FortifySSCClient {
     private sscUrl: string;
     private ciToken: string;
@@ -139,68 +140,203 @@ class FortifySSCClient {
     }
 
     private async makeRequest(url: string): Promise<any> {
+        console.log(`Fortify API Request: ${url}`);
+        
         const response = await fetch(url, {
             headers: {
                 'Authorization': `FortifyToken ${this.ciToken}`,
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'User-Agent': 'Azure-DevOps-Fortify-Extension/9.0.0'
             }
         });
 
         if (!response.ok) {
-            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
-        return response.json();
+        const data = await response.json();
+        console.log(`Fortify API Response count:`, data.count || 'N/A');
+        return data;
     }
 
-    public async getApplicationId(appName: string): Promise<string> {
+    public async getProjectId(appName: string): Promise<string> {
+        // Use the correct projects endpoint without quotes
         const url = `${this.sscUrl}/api/v1/projects?q=name:${encodeURIComponent(appName)}&fields=id`;
         const response = await this.makeRequest(url);
         
         if (!response.data || response.data.length === 0) {
-            throw new Error(`Application ${appName} not found`);
+            throw new Error(`Application "${appName}" not found in Fortify SSC`);
         }
         
-        return response.data[0].id;
+        console.log(`Found application "${appName}" with project ID: ${response.data[0].id}`);
+        return response.data[0].id.toString();
     }
 
-    public async getVersionId(appId: string, appVersion: string): Promise<string> {
-        const url = `${this.sscUrl}/api/v1/projectVersions?q=project.id:${appId},name:${encodeURIComponent(appVersion)}&fields=id`;
+    public async getVersionId(projectId: string, appVersion: string): Promise<string> {
+        // Use the correct project versions endpoint with quotes around version name
+        const url = `${this.sscUrl}/api/v1/projects/${projectId}/versions?q=name:"${encodeURIComponent(appVersion)}"`;
         const response = await this.makeRequest(url);
         
         if (!response.data || response.data.length === 0) {
-            throw new Error(`Version ${appVersion} not found`);
+            throw new Error(`Version "${appVersion}" not found for the specified application`);
         }
         
-        return response.data[0].id;
+        console.log(`Found version "${appVersion}" with version ID: ${response.data[0].id}`);
+        return response.data[0].id.toString();
     }
 
-    public async getIssues(versionId: string): Promise<FortifyIssue[]> {
-        const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/issues?limit=500&fields=id,issueName,severity,priority,likelihood,confidence,category,kingdom,primaryLocation,lineNumber`;
+    public async getSecurityAuditorFilterSetId(versionId: string): Promise<string> {
+        const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/filterSets`;
         const response = await this.makeRequest(url);
         
-        if (!response.data) {
-            return [];
+        if (!response.data || response.data.length === 0) {
+            throw new Error('No filter sets found for this project version');
         }
+        
+        // Find "Security Auditor View" filterset (note the exact capitalization)
+        const securityAuditorFilter = response.data.find((filterSet: any) => 
+            filterSet.title === 'Security Auditor View' || 
+            filterSet.title.toLowerCase().includes('security auditor')
+        );
+        
+        if (!securityAuditorFilter) {
+            console.warn('Security Auditor View filterset not found, using default filterset');
+            // Fallback to first available filterset or the default one
+            const defaultFilter = response.data.find((filterSet: any) => filterSet.defaultFilterSet === true);
+            if (defaultFilter) {
+                console.log(`Using default filterset: ${defaultFilter.title}`);
+                return defaultFilter.guid;
+            }
+            return response.data[0].guid;
+        }
+        
+        console.log(`Found Security Auditor filterset: ${securityAuditorFilter.title} with ID: ${securityAuditorFilter.guid}`);
+        return securityAuditorFilter.guid;
+    }
 
-        return response.data.map((issue: any) => ({
-            id: issue.id.toString(),
-            issueName: issue.issueName,
-            severity: this.mapSeverityToString(issue.severity || 0),
-            priority: issue.priority || this.mapSeverityToString(issue.severity || 0),
-            likelihood: this.mapLikelihoodToString(issue.likelihood || 0),
-            confidence: this.mapConfidenceToString(issue.confidence || 0),
-            primaryLocation: issue.primaryLocation || '',
-            lineNumber: issue.lineNumber || 0,
-            kingdom: issue.kingdom || '',
-            category: issue.category || issue.issueName
-        }));
+    public async getIssues(versionId: string, start: number = 0, limit: number = 20): Promise<{issues: FortifyIssue[], total: number}> {
+        try {
+            // Get Security Auditor filterset ID
+            const filterSetId = await this.getSecurityAuditorFilterSetId(versionId);
+            
+            // Build issues URL with the exact parameters from your working example
+            const params = new URLSearchParams({
+                filterset: filterSetId,
+                start: start.toString(),
+                limit: limit.toString(),
+                orderby: 'friority', // Sort by priority as specified
+                showhidden: 'false',
+                showremoved: 'false',
+                showsuppressed: 'false'
+            });
+            
+            const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/issues?${params.toString()}`;
+            const response = await this.makeRequest(url);
+            
+            if (!response.data) {
+                return { issues: [], total: 0 };
+            }
+
+            const issues = response.data.map((issue: any) => ({
+                id: issue.id?.toString() || '',
+                issueName: issue.issueName || issue.category || 'Unknown Issue',
+                severity: this.mapSeverityToString(issue.severity || 0),
+                priority: this.mapPriorityToString(issue.friority || issue.severity || 0), // Note: friority is the correct field name
+                likelihood: this.mapLikelihoodToString(issue.likelihood || 0),
+                confidence: this.mapConfidenceToString(issue.confidence || 0),
+                primaryLocation: issue.primaryLocation || issue.fileName || '',
+                lineNumber: issue.lineNumber || 0,
+                kingdom: issue.kingdom || '',
+                category: issue.category || issue.issueName || 'Uncategorized'
+            }));
+
+            return {
+                issues,
+                total: response.count || response.data.length
+            };
+            
+        } catch (error) {
+            console.error('Error fetching issues with filterset, falling back to direct fetch:', error);
+            
+            // Fallback: direct issues fetch without filterset
+            const params = new URLSearchParams({
+                start: start.toString(),
+                limit: limit.toString(),
+                orderby: 'friority'
+            });
+            
+            const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/issues?${params.toString()}`;
+            const response = await this.makeRequest(url);
+            
+            if (!response.data) {
+                return { issues: [], total: 0 };
+            }
+
+            const issues = response.data.map((issue: any) => ({
+                id: issue.id?.toString() || '',
+                issueName: issue.issueName || issue.category || 'Unknown Issue',
+                severity: this.mapSeverityToString(issue.severity || 0),
+                priority: this.mapPriorityToString(issue.friority || issue.severity || 0),
+                likelihood: this.mapLikelihoodToString(issue.likelihood || 0),
+                confidence: this.mapConfidenceToString(issue.confidence || 0),
+                primaryLocation: issue.primaryLocation || issue.fileName || '',
+                lineNumber: issue.lineNumber || 0,
+                kingdom: issue.kingdom || '',
+                category: issue.category || issue.issueName || 'Uncategorized'
+            }));
+
+            return {
+                issues,
+                total: response.count || response.data.length
+            };
+        }
+    }
+
+    // Get all issues with pagination
+    public async getAllIssues(versionId: string, maxResults: number = 500): Promise<FortifyIssue[]> {
+        const allIssues: FortifyIssue[] = [];
+        let start = 0;
+        const limit = 50; // Fetch in chunks
+        
+        while (allIssues.length < maxResults) {
+            const result = await this.getIssues(versionId, start, limit);
+            
+            if (result.issues.length === 0) {
+                break; // No more issues
+            }
+            
+            allIssues.push(...result.issues);
+            start += limit;
+            
+            // If we got fewer results than requested, we've reached the end
+            if (result.issues.length < limit) {
+                break;
+            }
+        }
+        
+        return allIssues.slice(0, maxResults); // Ensure we don't exceed maxResults
+    }
+
+    // Simplified method that combines project and version lookup
+    public async getVersionIdByNames(appName: string, appVersion: string): Promise<string> {
+        const projectId = await this.getProjectId(appName);
+        const versionId = await this.getVersionId(projectId, appVersion);
+        return versionId;
     }
 
     private mapSeverityToString(severity: number): string {
-        if (severity >= 5.0) return "Critical";
-        if (severity >= 4.0) return "High";
-        if (severity >= 2.5) return "Medium";
+        if (severity >= 4.0) return "Critical";
+        if (severity >= 3.0) return "High";
+        if (severity >= 2.0) return "Medium";
+        return "Low";
+    }
+
+    private mapPriorityToString(priority: number): string {
+        // Note: friority in Fortify API uses different scale
+        if (priority >= 4.0) return "Critical";
+        if (priority >= 3.0) return "High"; 
+        if (priority >= 2.0) return "Medium";
         return "Low";
     }
 
@@ -324,12 +460,12 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
             console.log("Fortify Report: Fetching live data from SSC...");
             const fortifyClient = new FortifySSCClient(config.sscUrl, config.ciToken);
             
-            // Get application and version IDs
-            const appId = await fortifyClient.getApplicationId(config.appName);
-            const versionId = await fortifyClient.getVersionId(appId, config.appVersion);
+            // Get version ID using the corrected API calls
+            const versionId = await fortifyClient.getVersionIdByNames(config.appName, config.appVersion);
+            console.log(`Successfully got version ID: ${versionId}`);
             
-            // Get issues
-            const issues = await fortifyClient.getIssues(versionId);
+            // Get issues using the corrected filterset approach
+            const issues = await fortifyClient.getAllIssues(versionId, 500);
             
             const reportData: ReportData = {
                 issues: issues,
