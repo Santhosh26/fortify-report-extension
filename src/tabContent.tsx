@@ -128,231 +128,6 @@ class BuildAttachmentClient extends AttachmentClient {
     }
 }
 
-// Fortify SSC API Client
-// Enhanced Fortify SSC API Client (for tabContent.tsx)
-class FortifySSCClient {
-    private sscUrl: string;
-    private ciToken: string;
-
-    constructor(sscUrl: string, ciToken: string) {
-        this.sscUrl = sscUrl.replace(/\/$/, ''); // Remove trailing slash
-        this.ciToken = ciToken;
-    }
-
-    private async makeRequest(url: string): Promise<any> {
-        console.log(`Fortify API Request: ${url}`);
-        
-        const response = await fetch(url, {
-            headers: {
-                'Authorization': `FortifyToken ${this.ciToken}`,
-                'Accept': 'application/json',
-                'User-Agent': 'Azure-DevOps-Fortify-Extension/9.0.0'
-            }
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
-        }
-
-        const data = await response.json();
-        console.log(`Fortify API Response count:`, data.count || 'N/A');
-        return data;
-    }
-
-    public async getProjectId(appName: string): Promise<string> {
-        // Use the correct projects endpoint without quotes
-        const url = `${this.sscUrl}/api/v1/projects?q=name:${encodeURIComponent(appName)}&fields=id`;
-        const response = await this.makeRequest(url);
-        
-        if (!response.data || response.data.length === 0) {
-            throw new Error(`Application "${appName}" not found in Fortify SSC`);
-        }
-        
-        console.log(`Found application "${appName}" with project ID: ${response.data[0].id}`);
-        return response.data[0].id.toString();
-    }
-
-    public async getVersionId(projectId: string, appVersion: string): Promise<string> {
-        // Use the correct project versions endpoint with quotes around version name
-        const url = `${this.sscUrl}/api/v1/projects/${projectId}/versions?q=name:"${encodeURIComponent(appVersion)}"`;
-        const response = await this.makeRequest(url);
-        
-        if (!response.data || response.data.length === 0) {
-            throw new Error(`Version "${appVersion}" not found for the specified application`);
-        }
-        
-        console.log(`Found version "${appVersion}" with version ID: ${response.data[0].id}`);
-        return response.data[0].id.toString();
-    }
-
-    public async getSecurityAuditorFilterSetId(versionId: string): Promise<string> {
-        const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/filterSets`;
-        const response = await this.makeRequest(url);
-        
-        if (!response.data || response.data.length === 0) {
-            throw new Error('No filter sets found for this project version');
-        }
-        
-        // Find "Security Auditor View" filterset (note the exact capitalization)
-        const securityAuditorFilter = response.data.find((filterSet: any) => 
-            filterSet.title === 'Security Auditor View' || 
-            filterSet.title.toLowerCase().includes('security auditor')
-        );
-        
-        if (!securityAuditorFilter) {
-            console.warn('Security Auditor View filterset not found, using default filterset');
-            // Fallback to first available filterset or the default one
-            const defaultFilter = response.data.find((filterSet: any) => filterSet.defaultFilterSet === true);
-            if (defaultFilter) {
-                console.log(`Using default filterset: ${defaultFilter.title}`);
-                return defaultFilter.guid;
-            }
-            return response.data[0].guid;
-        }
-        
-        console.log(`Found Security Auditor filterset: ${securityAuditorFilter.title} with ID: ${securityAuditorFilter.guid}`);
-        return securityAuditorFilter.guid;
-    }
-
-    public async getIssues(versionId: string, start: number = 0, limit: number = 20): Promise<{issues: FortifyIssue[], total: number}> {
-        try {
-            // Get Security Auditor filterset ID
-            const filterSetId = await this.getSecurityAuditorFilterSetId(versionId);
-            
-            // Build issues URL with the exact parameters from your working example
-            const params = new URLSearchParams({
-                filterset: filterSetId,
-                start: start.toString(),
-                limit: limit.toString(),
-                orderby: 'friority', // Sort by priority as specified
-                showhidden: 'false',
-                showremoved: 'false',
-                showsuppressed: 'false'
-            });
-            
-            const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/issues?${params.toString()}`;
-            const response = await this.makeRequest(url);
-            
-            if (!response.data) {
-                return { issues: [], total: 0 };
-            }
-
-            const issues = response.data.map((issue: any) => ({
-                id: issue.id?.toString() || '',
-                issueName: issue.issueName || issue.category || 'Unknown Issue',
-                severity: this.mapSeverityToString(issue.severity || 0),
-                priority: this.mapPriorityToString(issue.friority || issue.severity || 0), // Note: friority is the correct field name
-                likelihood: this.mapLikelihoodToString(issue.likelihood || 0),
-                confidence: this.mapConfidenceToString(issue.confidence || 0),
-                primaryLocation: issue.primaryLocation || issue.fileName || '',
-                lineNumber: issue.lineNumber || 0,
-                kingdom: issue.kingdom || '',
-                category: issue.category || issue.issueName || 'Uncategorized'
-            }));
-
-            return {
-                issues,
-                total: response.count || response.data.length
-            };
-            
-        } catch (error) {
-            console.error('Error fetching issues with filterset, falling back to direct fetch:', error);
-            
-            // Fallback: direct issues fetch without filterset
-            const params = new URLSearchParams({
-                start: start.toString(),
-                limit: limit.toString(),
-                orderby: 'friority'
-            });
-            
-            const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/issues?${params.toString()}`;
-            const response = await this.makeRequest(url);
-            
-            if (!response.data) {
-                return { issues: [], total: 0 };
-            }
-
-            const issues = response.data.map((issue: any) => ({
-                id: issue.id?.toString() || '',
-                issueName: issue.issueName || issue.category || 'Unknown Issue',
-                severity: this.mapSeverityToString(issue.severity || 0),
-                priority: this.mapPriorityToString(issue.friority || issue.severity || 0),
-                likelihood: this.mapLikelihoodToString(issue.likelihood || 0),
-                confidence: this.mapConfidenceToString(issue.confidence || 0),
-                primaryLocation: issue.primaryLocation || issue.fileName || '',
-                lineNumber: issue.lineNumber || 0,
-                kingdom: issue.kingdom || '',
-                category: issue.category || issue.issueName || 'Uncategorized'
-            }));
-
-            return {
-                issues,
-                total: response.count || response.data.length
-            };
-        }
-    }
-
-    // Get all issues with pagination
-    public async getAllIssues(versionId: string, maxResults: number = 500): Promise<FortifyIssue[]> {
-        const allIssues: FortifyIssue[] = [];
-        let start = 0;
-        const limit = 50; // Fetch in chunks
-        
-        while (allIssues.length < maxResults) {
-            const result = await this.getIssues(versionId, start, limit);
-            
-            if (result.issues.length === 0) {
-                break; // No more issues
-            }
-            
-            allIssues.push(...result.issues);
-            start += limit;
-            
-            // If we got fewer results than requested, we've reached the end
-            if (result.issues.length < limit) {
-                break;
-            }
-        }
-        
-        return allIssues.slice(0, maxResults); // Ensure we don't exceed maxResults
-    }
-
-    // Simplified method that combines project and version lookup
-    public async getVersionIdByNames(appName: string, appVersion: string): Promise<string> {
-        const projectId = await this.getProjectId(appName);
-        const versionId = await this.getVersionId(projectId, appVersion);
-        return versionId;
-    }
-
-    private mapSeverityToString(severity: number): string {
-        if (severity >= 4.0) return "Critical";
-        if (severity >= 3.0) return "High";
-        if (severity >= 2.0) return "Medium";
-        return "Low";
-    }
-
-    private mapPriorityToString(priority: number): string {
-        // Note: friority in Fortify API uses different scale
-        if (priority >= 4.0) return "Critical";
-        if (priority >= 3.0) return "High"; 
-        if (priority >= 2.0) return "Medium";
-        return "Low";
-    }
-
-    private mapConfidenceToString(confidence: number): string {
-        if (confidence >= 4.0) return "High";
-        if (confidence >= 2.5) return "Medium";
-        return "Low";
-    }
-
-    private mapLikelihoodToString(likelihood: number): string {
-        if (likelihood >= 0.7) return "Likely";
-        if (likelihood >= 0.3) return "Possible";
-        return "Unlikely";
-    }
-}
-
 interface FortifyReportPanelProps {
     attachmentClient: AttachmentClient | null
 }
@@ -368,7 +143,6 @@ interface FortifyReportPanelState {
 }
 
 class FortifyReportPanel extends React.Component<FortifyReportPanelProps, FortifyReportPanelState> {
-    private refreshInterval: NodeJS.Timeout | null = null;
 
     constructor(props: FortifyReportPanelProps) {
         super(props);
@@ -385,18 +159,6 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
 
     componentDidMount() {
         this.loadReportData();
-        // Set up auto-refresh every 5 minutes
-        this.refreshInterval = setInterval(() => {
-            if (this.state.config) {
-                this.fetchFortifyData(this.state.config);
-            }
-        }, 300000); // 5 minutes
-    }
-
-    componentWillUnmount() {
-        if (this.refreshInterval) {
-            clearInterval(this.refreshInterval);
-        }
     }
 
     componentDidUpdate(prevProps: FortifyReportPanelProps) {
@@ -438,59 +200,41 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
             console.log("Fortify Report: Loaded configuration", config);
             this.setState({ config });
 
-            // Now fetch live data from Fortify SSC
-            await this.fetchFortifyData(config);
+            // Try to find pre-fetched report data attachment
+            const reportAttachment = attachments.find(a => a.name.includes('.report'));
+            
+            if (reportAttachment) {
+                console.log("Fortify Report: Found pre-fetched report data attachment");
+                const reportContent = await this.props.attachmentClient.getAttachmentContent(reportAttachment.name);
+                const reportData: ReportData = JSON.parse(reportContent);
+                
+                console.log(`Fortify Report: Successfully loaded ${reportData.totalCount} issues from pre-fetched data`);
+                
+                this.setState({
+                    reportData,
+                    loading: false,
+                    error: null,
+                    filteredIssues: reportData.issues
+                });
+            } else {
+                // No pre-fetched data found - this means the task couldn't fetch data
+                console.warn("Fortify Report: No pre-fetched report data found, likely due to connection issues during build");
+                const mockData = this.getMockData("No pre-fetched Fortify data available - there may have been connection issues during the build");
+                this.setState({
+                    reportData: mockData,
+                    loading: false,
+                    error: "No live data available - check the build logs for connection issues. Contact your administrator to verify Fortify SSC connectivity from the build agent.",
+                    filteredIssues: mockData.issues
+                });
+            }
             
         } catch (error) {
-            console.error("Fortify Report: Error loading configuration", error);
-            const mockData = this.getMockData(`Error loading configuration: ${error instanceof Error ? error.message : String(error)}`);
+            console.error("Fortify Report: Error loading report data", error);
+            const mockData = this.getMockData(`Error loading report data: ${error instanceof Error ? error.message : String(error)}`);
             this.setState({
                 reportData: mockData,
                 loading: false,
                 error: error instanceof Error ? error.message : String(error),
-                filteredIssues: mockData.issues
-            });
-        }
-    }
-
-    private async fetchFortifyData(config: FortifyConfig) {
-        try {
-            this.setState({ loading: true, error: null });
-            
-            console.log("Fortify Report: Fetching live data from SSC...");
-            const fortifyClient = new FortifySSCClient(config.sscUrl, config.ciToken);
-            
-            // Get version ID using the corrected API calls
-            const versionId = await fortifyClient.getVersionIdByNames(config.appName, config.appVersion);
-            console.log(`Successfully got version ID: ${versionId}`);
-            
-            // Get issues using the corrected filterset approach
-            const issues = await fortifyClient.getAllIssues(versionId, 500);
-            
-            const reportData: ReportData = {
-                issues: issues,
-                appName: config.appName,
-                appVersion: config.appVersion,
-                scanDate: new Date().toISOString(),
-                totalCount: issues.length
-            };
-            
-            console.log(`Fortify Report: Successfully fetched ${issues.length} issues`);
-            
-            this.setState({
-                reportData,
-                loading: false,
-                error: null,
-                filteredIssues: issues
-            });
-            
-        } catch (error) {
-            console.error("Fortify Report: Error fetching Fortify data", error);
-            const mockData = this.getMockData(`Error fetching Fortify data: ${error instanceof Error ? error.message : String(error)}`);
-            this.setState({
-                reportData: mockData,
-                loading: false,
-                error: `API Error: ${error instanceof Error ? error.message : String(error)}`,
                 filteredIssues: mockData.issues
             });
         }
@@ -570,11 +314,8 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
     }
 
     private handleRefresh = async () => {
-        if (this.state.config) {
-            await this.fetchFortifyData(this.state.config);
-        } else {
-            await this.loadReportData();
-        }
+        // Since we're using pre-fetched data, just reload from attachments
+        await this.loadReportData();
     }
 
     render() {
@@ -586,7 +327,7 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                     <Card className="fortify-report-card">
                         <div className="loading-container">
                             <div className="spinner"></div>
-                            <p>Loading Fortify report from SSC...</p>
+                            <p>Loading Fortify report data...</p>
                         </div>
                     </Card>
                 </Page>
@@ -613,6 +354,9 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
             low: filteredIssues.filter(i => i.priority === 'Low').length
         };
 
+        // Check if we're showing mock data
+        const isShowingMockData = reportData.appName === 'MockApp';
+
         return (
             <Page>
                 <Card className="fortify-report-card">
@@ -623,8 +367,15 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                                 Application: {reportData.appName} - Version: {reportData.appVersion} - 
                                 Last Updated: {new Date(reportData.scanDate).toLocaleString()} - 
                                 Total Issues: {reportData.totalCount}
+                                {isShowingMockData && <span style={{color: '#ff6b35', fontWeight: 'bold'}}> (MOCK DATA)</span>}
                             </div>
                             {error && <div className="error-banner">⚠️ {error}</div>}
+                            {isShowingMockData && (
+                                <div className="error-banner">
+                                    📊 This report is showing sample data. Real Fortify SSC data was not available during the build. 
+                                    Check the build logs for connection details.
+                                </div>
+                            )}
                         </div>
                         
                         <div className="controls">
@@ -653,7 +404,7 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                                 </select>
                             </div>
                             <button onClick={this.handleRefresh} className="refresh-btn" disabled={loading}>
-                                {loading ? 'Refreshing...' : 'Refresh'}
+                                {loading ? 'Refreshing...' : 'Reload Data'}
                             </button>
                         </div>
                         
