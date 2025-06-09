@@ -1,1 +1,102 @@
-node_modules
+Of course. Here is a comprehensive .gitignore file tailored for your project structure and technologies (Node.js, TypeScript, Webpack, VS Code/Azure DevOps Extension).
+
+This file includes the specific items you requested (.vsix, node_modules, dist) and adds other common files and directories that are generated during development and should not be committed to source control.
+
+.gitignore
+# =============================================================================
+# === General =================================================================
+# =============================================================================
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+
+# =============================================================================
+# === Dependencies ============================================================
+# =============================================================================
+
+# Dependencies managed by package managers
+/node_modules/
+
+
+# =============================================================================
+# === Build & Compilation Output ==============================================
+# =============================================================================
+
+# Build output directory from Webpack or tsc
+/dist/
+
+# Compiled TypeScript files.
+# Although Webpack bundles into /dist, it's good practice to ignore these
+# in case `tsc` is run manually. This pattern avoids ignoring root-level .js
+# files like your webpack configs.
+/src/**/*.js
+/src/**/*.js.map
+
+# Azure DevOps / VS Code extension package files
+# These are build artifacts.
+*.vsix
+
+
+# =============================================================================
+# === Editor & IDE Directories ================================================
+# =============================================================================
+
+# VS Code specific
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Other editor directories
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+
+# =============================================================================
+# === Testing & Coverage ======================================================
+# =============================================================================
+
+# Test coverage reports
+/coverage/
+.nyc_output/
+
+How to use it:
+
+Create a file named .gitignore in the root of your fortify-report-extension/ directory.
+
+Copy and paste the content above into that file.
+
+Save the file.
+
+Git will now automatically ignore all the specified files and directories.
+
+Explanation of Key Sections:
+
+/node_modules/: Ignores the entire folder where your npm or yarn dependencies are installed. This is crucial as it can be very large and is always re-created by running npm install.
+
+/dist/: Ignores the output directory from your Webpack build process. This contains the final bundled and minified code that the extension will use.
+
+*.vsix: Ignores the final packaged extension file. This is a build artifact, similar to a .zip or .exe, and shouldn't be in source control.
+
+/src/**/*.js and .js.map: This specifically ignores any JavaScript files that might be compiled from your TypeScript (.ts, .tsx) files inside the src directory. This is a safer pattern than just *.js, which would incorrectly ignore your Webpack configuration files.
+
+.vscode/*: Ignores user-specific VS Code settings. The ! lines are exceptions, allowing you to commit shared project settings for debugging (launch.json) or recommended extensions (extensions.json) if your team decides to. You can remove these ! lines if you want to ignore everything in the .vscode directory.
+
+OS-generated files: Ignores common system files created by macOS, Windows, and Linux that don't belong in a repository.
