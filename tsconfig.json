@@ -1,16 +1,26 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    "target": "es2015",
-    "declaration": true,
-    "strict": true,
+    "moduleResolution": "node",
+    "target": "es6",
+    "outDir": "dist/",
+    "jsx": "react",
+    "declaration": false,
+    "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "outDir": "./dist/report",
-    "lib": ["es2015", "dom"],
-    "rootDir": "src"
+    "types": [
+        "react",
+        "node"
+    ]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "src/task"]
+  "files": [
+      "src/tabContent.tsx"
+  ],
+  "include": [
+      "src/**/*"
+  ],
+  "exclude": [
+      "node_modules"
+  ]
 }

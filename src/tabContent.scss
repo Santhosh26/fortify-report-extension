@@ -1,0 +1,283 @@
+@use "node_modules/azure-devops-ui/Core/platformCommon";
+
+.fortify-report-card {
+    margin: 0;
+    padding: 0;
+    
+    .fortify-report {
+        max-width: 100%;
+        padding: 20px;
+
+        .header {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #e5e5e5;
+            padding-bottom: 15px;
+            
+            h2 {
+                margin: 0 0 8px 0;
+                color: #333;
+                font-size: 24px;
+                font-weight: 600;
+            }
+            
+            .app-info {
+                color: #666;
+                font-size: 14px;
+                margin: 0;
+            }
+
+            .error-banner {
+                background: #fff4e6;
+                border: 1px solid #ffb366;
+                color: #d2691e;
+                padding: 8px 12px;
+                border-radius: 4px;
+                margin-top: 10px;
+                font-size: 14px;
+            }
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+            
+            .filter-group {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            
+            .filter-select {
+                padding: 8px 12px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background: white;
+                min-width: 150px;
+                font-size: 14px;
+                
+                &:focus {
+                    outline: none;
+                    border-color: #0078d4;
+                    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+                }
+
+                &:disabled {
+                    background: #f5f5f5;
+                    color: #999;
+                    cursor: not-allowed;
+                }
+
+                &:first-child {
+                    font-weight: 600;
+                    border-color: #0078d4;
+                    background: linear-gradient(135deg, #f0f8ff 0%, #ffffff 100%);
+                }
+            }
+            
+            .refresh-btn {
+                padding: 8px 16px;
+                background: #0078d4;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+                
+                &:hover:not(:disabled) {
+                    background: #106ebe;
+                }
+
+                &:disabled {
+                    background: #ccc;
+                    cursor: not-allowed;
+                }
+            }
+        }
+
+        .stats-summary {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            
+            .stat-card {
+                background: white;
+                border: 1px solid #e5e5e5;
+                border-radius: 6px;
+                padding: 16px;
+                min-width: 120px;
+                text-align: center;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                
+                &.critical {
+                    border-color: #ed1c24;
+                    background: linear-gradient(135deg, #fdf6f6 0%, #ffffff 100%);
+                }
+                
+                &.high {
+                    border-color: #ff7800;
+                    background: linear-gradient(135deg, #fff9f0 0%, #ffffff 100%);
+                }
+                
+                &.medium {
+                    border-color: #f6aa58;
+                    background: linear-gradient(135deg, #fffef0 0%, #ffffff 100%);
+                }
+                
+                &.low {
+                    border-color: #eec845;
+                    background: linear-gradient(135deg, #f0f8ff 0%, #ffffff 100%);
+                }
+                
+                .stat-value {
+                    font-size: 28px;
+                    font-weight: 700;
+                    margin-bottom: 4px;
+                    line-height: 1;
+                }
+                
+                .stat-label {
+                    font-size: 12px;
+                    color: #666;
+                    font-weight: 500;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+            }
+        }
+
+        .issues-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0;
+            background: white;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            
+            th {
+                background: #f8f9fa;
+                padding: 16px 12px;
+                text-align: left;
+                font-weight: 600;
+                font-size: 14px;
+                color: #333;
+                border-bottom: 2px solid #e5e5e5;
+                
+                &:first-child {
+                    border-top-left-radius: 6px;
+                }
+                
+                &:last-child {
+                    border-top-right-radius: 6px;
+                }
+            }
+            
+            td {
+                padding: 14px 12px;
+                border-bottom: 1px solid #e5e5e5;
+                font-size: 14px;
+                vertical-align: top;
+            }
+            
+            tr:hover {
+                background: #f8f9fa;
+            }
+
+            tr:last-child td {
+                border-bottom: none;
+            }
+            
+            .priority-cell {
+                font-weight: 600;
+                
+                // Security Auditor View colors
+                &.Critical {
+                    color: #ed1c24;
+                }
+                
+                &.High {
+                    color: #ff7800;
+                }
+                
+                &.Medium {
+                    color: #f6aa58;
+                }
+                
+                &.Low {
+                    color: #eec845;
+                }
+            }
+            
+            .tag-cell {
+                .tag {
+                    display: inline-block;
+                    padding: 3px 8px;
+                    border-radius: 12px;
+                    font-size: 11px;
+                    font-weight: 500;
+                    margin-right: 4px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.3px;
+                    
+                    &.exploitable {
+                        background: #fee;
+                        color: #d13438;
+                        border: 1px solid #d13438;
+                    }
+                    
+                    &.suspicious {
+                        background: #fff9e6;
+                        color: #ff8c00;
+                        border: 1px solid #ff8c00;
+                    }
+                }
+            }
+        }
+    }
+}
+
+.loading-container {
+    text-align: center;
+    padding: 60px 20px;
+    
+    .spinner {
+        width: 60px;
+        height: 60px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #0078d4;
+        border-radius: 50%;
+        margin: 0 auto 20px;
+        animation: spin 1s linear infinite;
+    }
+    
+    p {
+        color: #666;
+        font-size: 16px;
+        margin: 0;
+        font-weight: 500;
+    }
+}
+
+.error-container {
+    text-align: center;
+    padding: 60px 20px;
+    
+    p {
+        color: #d13438;
+        font-size: 18px;
+        margin: 0;
+        font-weight: 500;
+    }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

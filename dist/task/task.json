@@ -3,9 +3,9 @@
   "id": "53ab706a-68b4-4acc-b807-eaffedfab2b0",
   "name": "FortifyReport",
   "friendlyName": "Fortify SSC Report",
-  "description": "Fetches and displays Fortify SSC vulnerabilities",
-  "author": "Your Organization",
-  "helpUrl": "",
+  "description": "Fetches and displays Fortify SSC vulnerability reports in Azure DevOps build results",
+  "author": "Santhosh Kumar",
+  "helpUrl": "https://github.com/your-org/fortify-report-extension",
   "category": "Test",
   "visibility": [
     "Build",
@@ -18,40 +18,77 @@
     "Patch": 0
   },
   "minimumAgentVersion": "1.95.0",
-  "instanceNameFormat": "Fortify SSC Report: $(appName)",
+  "instanceNameFormat": "Fortify SSC Report: $(appName) v$(appVersion)",
+  "groups": [
+    {
+      "name": "connection",
+      "displayName": "Fortify SSC Connection",
+      "isExpanded": true
+    },
+    {
+      "name": "application",
+      "displayName": "Application Details",
+      "isExpanded": true
+    },
+    {
+      "name": "advanced",
+      "displayName": "Advanced Options",
+      "isExpanded": false
+    }
+  ],
   "inputs": [
     {
       "name": "sscUrl",
       "type": "string",
       "label": "Fortify SSC URL",
       "required": true,
-      "helpMarkDown": "The URL of your Fortify SSC instance (e.g., https://your-ssc-instance.com)"
+      "groupName": "connection",
+      "helpMarkDown": "The URL of your Fortify SSC instance (e.g., https://your-ssc-instance.com or http://52.67.113.58:8080/ssc)"
     },
     {
       "name": "ciToken",
       "type": "string",
       "label": "CI Token",
       "required": true,
-      "helpMarkDown": "Your Fortify SSC CI token"
+      "groupName": "connection",
+      "helpMarkDown": "Your Fortify SSC CI token for authentication. **Tip:** Store this in a secure variable or Azure Key Vault for security."
     },
     {
       "name": "appName",
       "type": "string",
       "label": "Application Name",
       "required": true,
-      "helpMarkDown": "Name of the application in Fortify SSC"
+      "groupName": "application",
+      "helpMarkDown": "Name of the application in Fortify SSC. This must match exactly with the application name in SSC."
     },
     {
       "name": "appVersion",
       "type": "string",
       "label": "Application Version",
       "required": true,
-      "helpMarkDown": "Version of the application in Fortify SSC"
+      "groupName": "application",
+      "helpMarkDown": "Version of the application in Fortify SSC. This must match exactly with the version name in SSC."
+    },
+    {
+      "name": "skipValidation",
+      "type": "boolean",
+      "label": "Skip Connection Validation",
+      "required": false,
+      "defaultValue": false,
+      "groupName": "advanced",
+      "helpMarkDown": "Skip validation of Fortify SSC connection and application/version during task execution. Enable this if you're experiencing network issues or want faster execution."
     }
   ],
   "execution": {
     "Node20_1": {
       "target": "task.js"
     }
+  },
+  "messages": {
+    "ConnectionFailed": "Failed to connect to Fortify SSC: %s",
+    "ApplicationNotFound": "Application '%s' not found in Fortify SSC",
+    "VersionNotFound": "Version '%s' not found for application '%s'",
+    "ValidationSkipped": "Connection validation skipped",
+    "ReportConfigured": "Fortify report configured successfully for %s v%s"
   }
 }

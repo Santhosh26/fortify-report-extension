@@ -1,61 +1,63 @@
 {
-  "manifestVersion": 1,
-  "id": "fortify-report-extension",
-  "name": "Fortify SSC Report",
-  "version": "9.0.0",
-  "publisher": "skumar14", 
-  "description": "A detailed Fortify SSC vulnerability report for Azure DevOps",
-  "public": false,
-  "categories": ["Azure Pipelines"],
-  "scopes": [
-    "vso.build",
-    "vso.build_execute"
-  ],
-  "targets": [
-    {
-      "id": "Microsoft.VisualStudio.Services"
-    }
-  ],
-  "contributions": [
-    {
-      "id": "FortifyReport",
-      "type": "ms.vss-distributed-task.task",
-      "targets": [
-        "ms.vss-distributed-task.tasks"
-      ],
-      "properties": {
-        "name": "task"
-      }
+    "manifestVersion": 1,
+    "id": "fortify-report-extension",
+    "name": "Fortify SSC Report",
+    "version": "10.0",
+    "publisher": "skumar14", 
+    "description": "A detailed Fortify SSC vulnerability report for Azure DevOps",
+    "public": false,
+    "categories": ["Azure Pipelines"],
+    "icons": {
+        "default": "images/ot-logo-128px.jpg"
     },
-    {
-      "id": "fortify-report-tab",
-      "type": "ms.vss-build-web.build-results-tab",
-      "targets": [
-        "ms.vss-build-web.build-results-tabs"
-      ],
-      "properties": {
-        "name": "Fortify Report",
-        "uri": "report/report.html",
-        "supportedScopes": ["build"]
-      }
-    }
-  ],
-  "files": [
-    {
-      "path": "dist/task",
-      "addressable": true,
-      "packagePath": "task"
-    },
-    {
-      "path": "dist/report",
-      "addressable": true,
-      "packagePath": "report"
-    },
-    {
-      "path": "images",
-      "addressable": true,
-      "packagePath": "images"
-    }
-  ]
-  
-}
+    "targets": [
+        {
+            "id": "Microsoft.VisualStudio.Services"
+        }
+    ],
+    "scopes": [
+        "vso.build",
+        "vso.build_execute"
+    ],
+    "contributions": [
+        {
+            "id": "fortify-report-tab",
+            "type": "ms.vss-build-web.build-results-tab",
+            "description": "Display Fortify SSC vulnerability report in Azure Pipelines",
+            "targets": ["ms.vss-build-web.build-results-view"],
+            "properties": {
+                "name": "Fortify Report",
+                "uri": "dist/tabContent.html",
+                "registeredObjectId": "registerBuild",
+                "supportsTasks": ["53ab706a-68b4-4acc-b807-eaffedfab2b0"],
+                "dynamic": true
+            }
+        },
+        {
+            "id": "FortifyReport",
+            "type": "ms.vss-distributed-task.task",
+            "targets": ["ms.vss-distributed-task.tasks"],
+            "properties": {
+                "name": "task",
+                "displayName": "Fortify SSC Report"
+            }
+        }
+    ],
+    "files": [
+        {
+            "path": "./dist/task",
+            "packagePath": "task",
+            "addressable": false
+        },
+        {
+            "path": "./dist",
+            "packagePath": "dist",
+            "addressable": true
+        },
+        {
+            "path": "images",
+            "addressable": true,
+            "packagePath": "images"
+        }
+    ]
+  }
