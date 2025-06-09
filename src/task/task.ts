@@ -33,6 +33,11 @@ interface FortifyIssue {
     lineNumber: number;
     kingdom: string;
     category: string;
+    friority: number;
+    folderGuid: string;
+    folderId: number;
+    folderName: string;
+    folderColor: string;
 }
 
 interface ReportData {
@@ -43,12 +48,20 @@ interface ReportData {
     totalCount: number;
 }
 
+// Hardcoded Security Auditor View folder mapping (standard across Fortify instances)
+const SECURITY_AUDITOR_FOLDERS = new Map([
+    ['b968f72f-cc12-03b5-976e-ad4c13920c21', { name: 'Critical', color: 'ed1c24', id: 1 }],
+    ['5b50bb77-071d-08ed-fdba-1213fa90ac5a', { name: 'High', color: 'ff7800', id: 2 }],
+    ['d5f55910-5f0d-a775-e91f-191d1f5608a4', { name: 'Medium', color: 'f6aa58', id: 3 }],
+    ['bb824e8d-b401-40be-13bd-5d156696a685', { name: 'Low', color: 'eec845', id: 4 }]
+]);
+
 class FortifySSCValidator {
     private sscUrl: string;
     private ciToken: string;
 
     constructor(sscUrl: string, ciToken: string) {
-        this.sscUrl = sscUrl.replace(/\/$/, ''); // Remove trailing slash
+        this.sscUrl = sscUrl.replace(/\/$/, '');
         this.ciToken = ciToken;
     }
 
@@ -56,20 +69,27 @@ class FortifySSCValidator {
         try {
             console.log('Validating Fortify SSC connection...');
             
-            const testUrl = `${this.sscUrl}/api/v1/applicationState`;
+            // Use the projects endpoint since we know this works with CI tokens
+            const testUrl = `${this.sscUrl}/api/v1/projects?limit=1`;
             const response = await this.makeRequest(testUrl);
             
-            if (!response || !response.data) {
+            if (!response) {
                 return { success: false, error: 'Unable to connect to Fortify SSC - no response received' };
             }
 
             console.log('✓ Successfully connected to Fortify SSC');
-            console.log(`✓ SSC Status: Maintenance Mode: ${response.data.maintenanceMode}, Config Required: ${response.data.configVisitRequired}`);
+            console.log(`✓ API access verified - found ${response.count || 0} projects`);
             return { success: true };
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             console.log(`✗ Fortify SSC connection failed: ${errorMessage}`);
+            
+            if (errorMessage.includes('401') || errorMessage.includes('Authentication failed')) {
+                console.log('💡 Tip: The CI token might have limited permissions for some endpoints');
+                console.log('💡 You can set skipValidation=true in the task to bypass this check');
+            }
+            
             return { success: false, error: errorMessage };
         }
     }
@@ -198,7 +218,6 @@ class FortifySSCValidator {
     }
 }
 
-// Enhanced Fortify SSC Client for server-side data fetching
 class FortifySSCDataFetcher {
     private validator: FortifySSCValidator;
     private sscUrl: string;
@@ -211,9 +230,9 @@ class FortifySSCDataFetcher {
     }
 
     public async fetchReportData(appName: string, appVersion: string): Promise<ReportData> {
-        console.log(`Fetching Fortify data for ${appName} v${appVersion}...`);
+        console.log(`🔍 Fetching Fortify data for ${appName} v${appVersion} (Security Auditor View)...`);
 
-        // Get project ID
+        // Step 1: Get project ID
         const projectUrl = `${this.sscUrl}/api/v1/projects?q=name:${encodeURIComponent(appName)}&fields=id`;
         const projectResponse = await this.validator.makeRequest(projectUrl);
         
@@ -224,7 +243,7 @@ class FortifySSCDataFetcher {
         const projectId = projectResponse.data[0].id;
         console.log(`✓ Found project ID: ${projectId}`);
 
-        // Get version ID
+        // Step 2: Get version ID
         const versionUrl = `${this.sscUrl}/api/v1/projects/${projectId}/versions?q=name:"${encodeURIComponent(appVersion)}"`;
         const versionResponse = await this.validator.makeRequest(versionUrl);
         
@@ -235,14 +254,17 @@ class FortifySSCDataFetcher {
         const versionId = versionResponse.data[0].id;
         console.log(`✓ Found version ID: ${versionId}`);
 
-        // Get filterset ID
-        const filterSetId = await this.getSecurityAuditorFilterSetId(versionId);
-        console.log(`✓ Using filterset ID: ${filterSetId}`);
+        // Step 3: Find Security Auditor View FilterSet
+        const securityAuditorGuid = await this.findSecurityAuditorFilterSet(versionId);
+        console.log(`✓ Using Security Auditor View: ${securityAuditorGuid}`);
 
-        // Fetch all issues with pagination
-        const allIssues = await this.getAllIssues(versionId, filterSetId);
+        // Step 4: Fetch all issues with Security Auditor folder mapping
+        console.log(`🔍 Fetching issues from Security Auditor View...`);
+        const allIssues = await this.fetchAllIssuesWithSecurityAuditorMapping(versionId, securityAuditorGuid);
         
         console.log(`✓ Successfully fetched ${allIssues.length} issues from Fortify SSC`);
+        const distribution = this.getIssueDistribution(allIssues);
+        console.log(`✓ Issue distribution:`, distribution);
 
         return {
             issues: allIssues,
@@ -253,7 +275,7 @@ class FortifySSCDataFetcher {
         };
     }
 
-    private async getSecurityAuditorFilterSetId(versionId: string): Promise<string> {
+    private async findSecurityAuditorFilterSet(versionId: string): Promise<string> {
         const url = `${this.sscUrl}/api/v1/projectVersions/${versionId}/filterSets`;
         const response = await this.validator.makeRequest(url);
         
@@ -261,33 +283,30 @@ class FortifySSCDataFetcher {
             throw new Error('No filter sets found for this project version');
         }
         
-        const securityAuditorFilter = response.data.find((filterSet: any) => 
-            filterSet.title === 'Security Auditor View' || 
-            filterSet.title.toLowerCase().includes('security auditor')
+        // Find Security Auditor View (should be default)
+        const securityAuditorFilterSet = response.data.find((fs: any) => 
+            fs.defaultFilterSet === true || fs.title.includes('Security Auditor')
         );
         
-        if (securityAuditorFilter) {
-            return securityAuditorFilter.guid;
+        if (!securityAuditorFilterSet) {
+            // Fallback to first filterset
+            console.warn('Security Auditor View not found, using first available filterset');
+            return response.data[0].guid;
         }
         
-        // Fallback to default filterset
-        const defaultFilter = response.data.find((filterSet: any) => filterSet.defaultFilterSet === true);
-        if (defaultFilter) {
-            console.log(`Using default filterset: ${defaultFilter.title}`);
-            return defaultFilter.guid;
-        }
-        
-        return response.data[0].guid;
+        return securityAuditorFilterSet.guid;
     }
 
-    private async getAllIssues(versionId: string, filterSetId: string): Promise<FortifyIssue[]> {
+    private async fetchAllIssuesWithSecurityAuditorMapping(versionId: string, filterSetGuid: string): Promise<FortifyIssue[]> {
         const allIssues: FortifyIssue[] = [];
         let start = 0;
         const limit = 50;
         
+        console.log(`📄 Fetching issues with Security Auditor View mapping...`);
+        
         while (allIssues.length < 500) { // Max 500 issues
             const params = new URLSearchParams({
-                filterset: filterSetId,
+                filterset: filterSetGuid,
                 start: start.toString(),
                 limit: limit.toString(),
                 orderby: 'friority',
@@ -300,45 +319,65 @@ class FortifySSCDataFetcher {
             const response = await this.validator.makeRequest(url);
             
             if (!response.data || response.data.length === 0) {
+                console.log(`No more issues found at start=${start}`);
                 break;
             }
 
-            const issues = response.data.map((issue: any) => ({
-                id: issue.id?.toString() || '',
-                issueName: issue.issueName || issue.category || 'Unknown Issue',
-                severity: this.mapSeverityToString(issue.severity || 0),
-                priority: this.mapPriorityToString(issue.friority || issue.severity || 0),
-                likelihood: this.mapLikelihoodToString(issue.likelihood || 0),
-                confidence: this.mapConfidenceToString(issue.confidence || 0),
-                primaryLocation: issue.primaryLocation || issue.fileName || '',
-                lineNumber: issue.lineNumber || 0,
-                kingdom: issue.kingdom || '',
-                category: issue.category || issue.issueName || 'Uncategorized'
-            }));
+            console.log(`📄 Processing ${response.data.length} issues from start=${start}`);
 
-            allIssues.push(...issues);
+            const batchIssues = response.data.map((issue: any) => {
+                // Map folderGuid to Security Auditor View folders
+                const folderGuid = issue.folderGuid || '';
+                const folder = SECURITY_AUDITOR_FOLDERS.get(folderGuid);
+                
+                const folderName = folder?.name || 'Unknown';
+                const folderColor = folder?.color || '666666';
+                const folderId = folder?.id || 0;
+                
+                // Log a few examples for debugging
+                if (allIssues.length < 5) {
+                    console.log(`🐛 Issue ${issue.id}: folderGuid="${folderGuid}" -> ${folderName} (#${folderColor})`);
+                }
+                
+                return {
+                    id: issue.id?.toString() || '',
+                    issueName: issue.issueName || issue.category || 'Unknown Issue',
+                    severity: folderName, // Critical, High, Medium, Low
+                    priority: folderName, // Critical, High, Medium, Low
+                    likelihood: this.mapLikelihoodToString(issue.likelihood || 0),
+                    confidence: this.mapConfidenceToString(issue.confidence || 0),
+                    primaryLocation: issue.primaryLocation || issue.fileName || '',
+                    lineNumber: issue.lineNumber || 0,
+                    kingdom: issue.kingdom || '',
+                    category: issue.category || issue.issueName || 'Uncategorized',
+                    friority: issue.friority || 0,
+                    folderGuid: folderGuid,
+                    folderId: folderId,
+                    folderName: folderName,
+                    folderColor: folderColor
+                };
+            });
+
+            allIssues.push(...batchIssues);
             start += limit;
             
-            if (issues.length < limit) {
+            if (response.data.length < limit) {
+                console.log(`Reached end of issues (got ${response.data.length} < ${limit})`);
                 break;
             }
         }
         
+        console.log(`✅ Fetched total of ${allIssues.length} issues`);
         return allIssues;
     }
 
-    private mapSeverityToString(severity: number): string {
-        if (severity >= 4.0) return "Critical";
-        if (severity >= 3.0) return "High";
-        if (severity >= 2.0) return "Medium";
-        return "Low";
-    }
-
-    private mapPriorityToString(priority: number): string {
-        if (priority >= 4.0) return "Critical";
-        if (priority >= 3.0) return "High"; 
-        if (priority >= 2.0) return "Medium";
-        return "Low";
+    private getIssueDistribution(issues: FortifyIssue[]): Record<string, number> {
+        const distribution: Record<string, number> = {};
+        issues.forEach(issue => {
+            const folderName = issue.folderName || 'Unknown';
+            distribution[folderName] = (distribution[folderName] || 0) + 1;
+        });
+        return distribution;
     }
 
     private mapConfidenceToString(confidence: number): string {
@@ -356,7 +395,7 @@ class FortifySSCDataFetcher {
 
 async function run() {
     try {
-        console.log('Starting Fortify SSC Report task...');
+        console.log('🚀 Starting Fortify SSC Report task (Security Auditor View)...');
         
         const sscUrl = tl.getInput('sscUrl', true);
         const ciToken = tl.getInput('ciToken', true);
@@ -375,8 +414,9 @@ async function run() {
             return;
         }
 
-        console.log(`Configuring Fortify SSC Report for: ${appName} v${appVersion}`);
-        console.log(`Fortify SSC URL: ${sscUrl}`);
+        console.log(`📋 Configuring Fortify SSC Report for: ${appName} v${appVersion}`);
+        console.log(`🌐 Fortify SSC URL: ${sscUrl}`);
+        console.log(`📁 Using Security Auditor View (default Fortify classification)`);
 
         const fortifyConfig: FortifyConfig = {
             sscUrl: sscUrl,
@@ -394,36 +434,46 @@ async function run() {
         let reportData: ReportData | null = null;
         
         if (!skipValidation) {
-            console.log('Validating Fortify SSC connection...');
+            console.log('🔍 Starting Fortify SSC validation...');
             const validator = new FortifySSCValidator(sscUrl, ciToken);
             
             const connectionResult = await validator.validateConnection();
             if (!connectionResult.success) {
-                console.warn(`Warning: Could not validate connection to Fortify SSC: ${connectionResult.error}`);
+                console.warn(`⚠️ Warning: Could not validate connection to Fortify SSC: ${connectionResult.error}`);
                 console.warn('The report will still be created but may fail to load data.');
             } else {
-                console.log('✓ Successfully connected to Fortify SSC');
+                console.log('✅ Successfully connected to Fortify SSC');
                 
                 const appVersionResult = await validator.validateApplicationAndVersion(appName, appVersion);
                 if (!appVersionResult.success) {
-                    console.warn(`Warning: Could not validate application/version: ${appVersionResult.error}`);
+                    console.warn(`⚠️ Warning: Could not validate application/version: ${appVersionResult.error}`);
                 } else {
-                    console.log('✓ Application and version validation successful');
+                    console.log('✅ Application and version validation successful');
                     
-                    // Fetch real data from Fortify SSC
+                    // Fetch data from Fortify SSC (Security Auditor View only)
                     try {
-                        console.log('Fetching Fortify vulnerability data...');
+                        console.log('📊 Fetching Fortify vulnerability data...');
                         const dataFetcher = new FortifySSCDataFetcher(sscUrl, ciToken);
                         reportData = await dataFetcher.fetchReportData(appName, appVersion);
-                        console.log(`✓ Successfully fetched ${reportData.totalCount} vulnerabilities`);
+                        
+                        console.log(`✅ Successfully fetched Security Auditor data:`);
+                        console.log(`   📄 ${reportData.totalCount} vulnerabilities`);
+                        console.log(`   📁 Classified using Security Auditor View folders`);
+                        
+                        // Validate that issues have proper folder mapping
+                        const issuesWithoutFolders = reportData.issues.filter(i => !i.folderGuid || i.folderName === 'Unknown');
+                        if (issuesWithoutFolders.length > 0) {
+                            console.warn(`⚠️ Warning: ${issuesWithoutFolders.length} issues missing proper folder classification`);
+                        }
+                        
                     } catch (fetchError) {
-                        console.warn(`Warning: Could not fetch Fortify data: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+                        console.error(`❌ Error fetching Fortify data: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
                         console.warn('The report will show an error message but still be created.');
                     }
                 }
             }
         } else {
-            console.log('Skipping Fortify SSC validation (skipValidation=true or FORTIFY_SKIP_VALIDATION=true)');
+            console.log('⏭️ Skipping Fortify SSC validation (skipValidation=true or FORTIFY_SKIP_VALIDATION=true)');
         }
 
         // Create output directory
@@ -435,13 +485,22 @@ async function run() {
         // Save configuration
         const configPath = path.join(outputDir, 'fortify-config.json');
         fs.writeFileSync(configPath, JSON.stringify(fortifyConfig, null, 2));
-        console.log(`✓ Saved Fortify configuration to: ${configPath}`);
+        console.log(`💾 Saved Fortify configuration to: ${configPath}`);
 
         // Save report data if we fetched it successfully
         if (reportData) {
             const reportPath = path.join(outputDir, 'fortify-report.json');
             fs.writeFileSync(reportPath, JSON.stringify(reportData, null, 2));
-            console.log(`✓ Saved Fortify report data to: ${reportPath}`);
+            console.log(`💾 Saved Fortify report data to: ${reportPath}`);
+            console.log(`📊 Report data summary: ${reportData.issues.length} issues`);
+            
+            // Log first few issues for verification
+            if (reportData.issues.length > 0) {
+                console.log(`📄 Sample issue classification:`);
+                reportData.issues.slice(0, 3).forEach(issue => {
+                    console.log(`   - ${issue.category}: ${issue.folderName} (${issue.folderGuid})`);
+                });
+            }
         }
 
         // Create the attachment that will trigger the tab to appear
@@ -455,23 +514,24 @@ async function run() {
         const attachmentName = `${tabName}.${jobName}.${stageName}.${stageAttempt}.config`;
         
         tl.addAttachment(attachmentType, attachmentName, configPath);
-        console.log(`✓ Added build attachment: ${attachmentType}/${attachmentName}`);
+        console.log(`📎 Added build attachment: ${attachmentType}/${attachmentName}`);
 
         // Add report data attachment if available
         if (reportData) {
             const reportAttachmentName = `${tabName}.${jobName}.${stageName}.${stageAttempt}.report`;
             const reportPath = path.join(outputDir, 'fortify-report.json');
             tl.addAttachment(attachmentType, reportAttachmentName, reportPath);
-            console.log(`✓ Added report data attachment: ${attachmentType}/${reportAttachmentName}`);
+            console.log(`📎 Added report data attachment: ${attachmentType}/${reportAttachmentName}`);
         }
         
-        console.log(`✓ Fortify SSC Report tab will be available in the build results`);
-        console.log(`✓ The report will ${reportData ? 'display live data' : 'show an error message'} from: ${sscUrl}`);
+        console.log(`✅ Fortify SSC Report tab will be available in the build results`);
+        console.log(`📊 The report will ${reportData ? 'display live data' : 'show an error message'} from: ${sscUrl}`);
         
-        tl.setResult(tl.TaskResult.Succeeded, `Fortify report configured for ${appName} v${appVersion}${reportData ? ` with ${reportData.totalCount} issues` : ''}`);
+        const successMessage = `Fortify report configured for ${appName} v${appVersion}${reportData ? ` with ${reportData.totalCount} issues` : ''} (Security Auditor View)`;
+        tl.setResult(tl.TaskResult.Succeeded, successMessage);
 
     } catch (error: any) {
-        console.error(`Fortify SSC Report Task Error: ${error.message}`);
+        console.error(`❌ Fortify SSC Report Task Error: ${error.message}`);
         if (error.stack) {
             console.error(`Stack trace: ${error.stack}`);
         }

@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "id": "fortify-report-extension",
     "name": "Fortify SSC Report",
-    "version": "9.0.0",
+    "version": "10.0",
     "publisher": "skumar14", 
     "description": "A detailed Fortify SSC vulnerability report for Azure DevOps",
     "public": false,

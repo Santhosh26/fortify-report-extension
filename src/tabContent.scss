@@ -1,4 +1,4 @@
-@import "node_modules/azure-devops-ui/Core/_platformCommon.scss";
+@use "node_modules/azure-devops-ui/Core/platformCommon";
 
 .fortify-report-card {
     margin: 0;
@@ -42,11 +42,14 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
             
             .filter-group {
                 display: flex;
                 gap: 12px;
                 align-items: center;
+                flex-wrap: wrap;
             }
             
             .filter-select {
@@ -61,6 +64,18 @@
                     outline: none;
                     border-color: #0078d4;
                     box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+                }
+
+                &:disabled {
+                    background: #f5f5f5;
+                    color: #999;
+                    cursor: not-allowed;
+                }
+
+                &:first-child {
+                    font-weight: 600;
+                    border-color: #0078d4;
+                    background: linear-gradient(135deg, #f0f8ff 0%, #ffffff 100%);
                 }
             }
             
@@ -101,22 +116,22 @@
                 box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
                 
                 &.critical {
-                    border-color: #d13438;
+                    border-color: #ed1c24;
                     background: linear-gradient(135deg, #fdf6f6 0%, #ffffff 100%);
                 }
                 
                 &.high {
-                    border-color: #ff8c00;
+                    border-color: #ff7800;
                     background: linear-gradient(135deg, #fff9f0 0%, #ffffff 100%);
                 }
                 
                 &.medium {
-                    border-color: #ffd700;
+                    border-color: #f6aa58;
                     background: linear-gradient(135deg, #fffef0 0%, #ffffff 100%);
                 }
                 
                 &.low {
-                    border-color: #0078d4;
+                    border-color: #eec845;
                     background: linear-gradient(135deg, #f0f8ff 0%, #ffffff 100%);
                 }
                 
@@ -182,20 +197,21 @@
             .priority-cell {
                 font-weight: 600;
                 
+                // Security Auditor View colors
                 &.Critical {
-                    color: #d13438;
+                    color: #ed1c24;
                 }
                 
                 &.High {
-                    color: #ff8c00;
+                    color: #ff7800;
                 }
                 
                 &.Medium {
-                    color: #daa520;
+                    color: #f6aa58;
                 }
                 
                 &.Low {
-                    color: #0078d4;
+                    color: #eec845;
                 }
             }
             
