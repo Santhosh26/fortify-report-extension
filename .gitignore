@@ -21,7 +21,7 @@ yarn-error.log*
 .LSOverride
 Thumbs.db
 ehthumbs.db
-package.json.lock
+package-json.lock
 dist
 # =============================================================================
 # === Dependencies ============================================================
