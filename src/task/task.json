@@ -17,7 +17,7 @@
     "Minor": 0,
     "Patch": 0
   },
-  "minimumAgentVersion": "1.95.0",
+  "minimumAgentVersion": "2.144.0",
   "instanceNameFormat": "Fortify SSC Report: $(appName) v$(appVersion)",
   "groups": [
     {
@@ -68,6 +68,15 @@
       "required": true,
       "groupName": "application",
       "helpMarkDown": "Version of the application in Fortify SSC. This must match exactly with the version name in SSC."
+    },
+    {
+      "name": "maxIssues",
+      "type": "string",
+      "label": "Maximum Issues",
+      "required": false,
+      "defaultValue": "10000",
+      "groupName": "advanced",
+      "helpMarkDown": "Maximum number of issues to fetch from Fortify SSC. Default is 10,000. Increase this value if your application has more issues than the default limit."
     },
     {
       "name": "skipValidation",

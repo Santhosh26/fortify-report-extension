@@ -2,13 +2,13 @@
     "manifestVersion": 1,
     "id": "fortify-report-extension",
     "name": "Fortify SSC Report",
-    "version": "10.0",
+    "version": "10.1",
     "publisher": "skumar14", 
     "description": "A detailed Fortify SSC vulnerability report for Azure DevOps",
     "public": false,
     "categories": ["Azure Pipelines"],
     "icons": {
-        "default": "images/ot-logo-128px.jpg"
+        "default": "images/ot-logo-128px.png"
     },
     "targets": [
         {
@@ -16,8 +16,7 @@
         }
     ],
     "scopes": [
-        "vso.build",
-        "vso.build_execute"
+        "vso.build"
     ],
     "contributions": [
         {
@@ -60,4 +59,4 @@
             "packagePath": "images"
         }
     ]
-  }
+}
