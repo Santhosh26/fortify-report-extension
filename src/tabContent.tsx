@@ -551,11 +551,6 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                         </div>
                     </div>
 
-                    {/* Status indicator */}
-                    <div style={{ color: '#28a745', padding: '10px', background: '#d4edda', borderRadius: '4px', marginBottom: '20px' }}>
-                        ✅ Extension loaded successfully with React {React.version || "18"} - Buffer issue fixed!
-                    </div>
-
                     {/* Show Security Auditor View info */}
                     <div style={{marginBottom: '20px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '14px'}}>
                         <strong>Classification:</strong> Security Auditor View (Fortify Default)

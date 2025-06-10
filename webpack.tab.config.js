@@ -79,8 +79,7 @@ module.exports = {
     plugins: [
         new CopyWebpackPlugin({
             patterns: [
-                { from: "src/tabContent.html", to: "tabContent.html" },
-                { from: "images", to: "images" } 
+                { from: "src/tabContent.html", to: "tabContent.html" }
             ]
         })
     ],
