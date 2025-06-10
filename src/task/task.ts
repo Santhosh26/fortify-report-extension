@@ -164,7 +164,7 @@ class FortifySSCValidator {
                 headers: {
                     'Authorization': `FortifyToken ${this.ciToken}`,
                     'Accept': 'application/json',
-                    'User-Agent': 'Azure-DevOps-Fortify-Extension/9.0.0'
+                    'User-Agent': 'Azure-DevOps-Fortify-Extension/10.0.0'
                 },
                 timeout: 30000,
                 rejectUnauthorized: false
@@ -229,8 +229,8 @@ class FortifySSCDataFetcher {
         this.validator = new FortifySSCValidator(sscUrl, ciToken);
     }
 
-    public async fetchReportData(appName: string, appVersion: string): Promise<ReportData> {
-        console.log(`🔍 Fetching Fortify data for ${appName} v${appVersion} (Security Auditor View)...`);
+    public async fetchReportData(appName: string, appVersion: string, maxIssues: number = 10000): Promise<ReportData> {
+        console.log(`🔍 Fetching Fortify data for ${appName} v${appVersion} (Security Auditor View, max ${maxIssues} issues)...`);
 
         // Step 1: Get project ID
         const projectUrl = `${this.sscUrl}/api/v1/projects?q=name:${encodeURIComponent(appName)}&fields=id`;
@@ -259,8 +259,8 @@ class FortifySSCDataFetcher {
         console.log(`✓ Using Security Auditor View: ${securityAuditorGuid}`);
 
         // Step 4: Fetch all issues with Security Auditor folder mapping
-        console.log(`🔍 Fetching issues from Security Auditor View...`);
-        const allIssues = await this.fetchAllIssuesWithSecurityAuditorMapping(versionId, securityAuditorGuid);
+        console.log(`🔍 Fetching issues from Security Auditor View (up to ${maxIssues} issues)...`);
+        const allIssues = await this.fetchAllIssuesWithSecurityAuditorMapping(versionId, securityAuditorGuid, maxIssues);
         
         console.log(`✓ Successfully fetched ${allIssues.length} issues from Fortify SSC`);
         const distribution = this.getIssueDistribution(allIssues);
@@ -297,14 +297,14 @@ class FortifySSCDataFetcher {
         return securityAuditorFilterSet.guid;
     }
 
-    private async fetchAllIssuesWithSecurityAuditorMapping(versionId: string, filterSetGuid: string): Promise<FortifyIssue[]> {
+    private async fetchAllIssuesWithSecurityAuditorMapping(versionId: string, filterSetGuid: string, maxIssues: number): Promise<FortifyIssue[]> {
         const allIssues: FortifyIssue[] = [];
         let start = 0;
-        const limit = 50;
+        const limit = 100; // Increased batch size for better performance
         
-        console.log(`📄 Fetching issues with Security Auditor View mapping...`);
+        console.log(`📄 Fetching up to ${maxIssues} issues with Security Auditor View mapping...`);
         
-        while (allIssues.length < 500) { // Max 500 issues
+        while (allIssues.length < maxIssues) {
             const params = new URLSearchParams({
                 filterset: filterSetGuid,
                 start: start.toString(),
@@ -319,11 +319,11 @@ class FortifySSCDataFetcher {
             const response = await this.validator.makeRequest(url);
             
             if (!response.data || response.data.length === 0) {
-                console.log(`No more issues found at start=${start}`);
+                console.log(`📄 No more issues found at start=${start} (total fetched: ${allIssues.length})`);
                 break;
             }
 
-            console.log(`📄 Processing ${response.data.length} issues from start=${start}`);
+            console.log(`📄 Processing ${response.data.length} issues from start=${start} (total so far: ${allIssues.length})`);
 
             const batchIssues = response.data.map((issue: any) => {
                 // Map folderGuid to Security Auditor View folders
@@ -361,14 +361,23 @@ class FortifySSCDataFetcher {
             allIssues.push(...batchIssues);
             start += limit;
             
-            if (response.data.length < limit) {
-                console.log(`Reached end of issues (got ${response.data.length} < ${limit})`);
+            // Stop if we've reached our limit
+            if (allIssues.length >= maxIssues) {
+                console.log(`📄 Reached maximum issue limit (${maxIssues}), stopping fetch`);
                 break;
             }
+            
+            if (response.data.length < limit) {
+                console.log(`📄 Reached end of issues (got ${response.data.length} < ${limit})`);
+                break;
+            }
+
+            // Add a small delay to be respectful to the Fortify API
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
         console.log(`✅ Fetched total of ${allIssues.length} issues`);
-        return allIssues;
+        return allIssues.slice(0, maxIssues); // Ensure we don't exceed the limit
     }
 
     private getIssueDistribution(issues: FortifyIssue[]): Record<string, number> {
@@ -401,9 +410,18 @@ async function run() {
         const ciToken = tl.getInput('ciToken', true);
         const appName = tl.getInput('appName', true);
         const appVersion = tl.getInput('appVersion', true);
+        
+        // NEW: Optional maximum number of issues to fetch
+        const maxIssuesInput = tl.getInput('maxIssues', false) || '10000';
+        const maxIssues = parseInt(maxIssuesInput, 10);
 
         if (!sscUrl || !ciToken || !appName || !appVersion) {
             tl.setResult(tl.TaskResult.Failed, 'Missing required inputs');
+            return;
+        }
+
+        if (isNaN(maxIssues) || maxIssues < 1) {
+            tl.setResult(tl.TaskResult.Failed, 'maxIssues must be a positive number');
             return;
         }
 
@@ -417,6 +435,7 @@ async function run() {
         console.log(`📋 Configuring Fortify SSC Report for: ${appName} v${appVersion}`);
         console.log(`🌐 Fortify SSC URL: ${sscUrl}`);
         console.log(`📁 Using Security Auditor View (default Fortify classification)`);
+        console.log(`🔢 Maximum issues to fetch: ${maxIssues}`);
 
         const fortifyConfig: FortifyConfig = {
             sscUrl: sscUrl,
@@ -454,10 +473,10 @@ async function run() {
                     try {
                         console.log('📊 Fetching Fortify vulnerability data...');
                         const dataFetcher = new FortifySSCDataFetcher(sscUrl, ciToken);
-                        reportData = await dataFetcher.fetchReportData(appName, appVersion);
+                        reportData = await dataFetcher.fetchReportData(appName, appVersion, maxIssues);
                         
                         console.log(`✅ Successfully fetched Security Auditor data:`);
-                        console.log(`   📄 ${reportData.totalCount} vulnerabilities`);
+                        console.log(`   📄 ${reportData.totalCount} vulnerabilities (max requested: ${maxIssues})`);
                         console.log(`   📁 Classified using Security Auditor View folders`);
                         
                         // Validate that issues have proper folder mapping

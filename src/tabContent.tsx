@@ -10,7 +10,6 @@ import { Build, BuildRestClient, Attachment } from "azure-devops-extension-api/B
 import { ObservableValue, ObservableObject } from "azure-devops-ui/Core/Observable"
 import { Observer } from "azure-devops-ui/Observer"
 import { Card } from "azure-devops-ui/Card"
-import { Page } from "azure-devops-ui/Page"
 
 const ATTACHMENT_TYPE = "fortify-report";
 
@@ -51,11 +50,13 @@ interface ReportData {
 SDK.init()
 SDK.ready().then(() => {
     try {
+        console.log("Fortify Report: SDK ready, initializing...");
         const config = SDK.getConfiguration()
         config.onBuildChanged((build: Build) => {
             console.log("Fortify Report: Build changed event received", build);
             let buildAttachmentClient = new BuildAttachmentClient(build)
             buildAttachmentClient.init().then(() => {
+                console.log("Fortify Report: Attachment client initialized, displaying reports");
                 displayReports(buildAttachmentClient)
             }).catch(error => {
                 console.error("Fortify Report: Error initializing attachment client", error);
@@ -66,13 +67,44 @@ SDK.ready().then(() => {
         console.error("Fortify Report: SDK initialization error", error);
         displayReports(null);
     }
+}).catch(error => {
+    console.error("Fortify Report: SDK.ready() failed", error);
+    displayReports(null);
 })
 
 function displayReports(attachmentClient: AttachmentClient | null) {
-    ReactDOM.render(
-        <FortifyReportPanel attachmentClient={attachmentClient} />, 
-        document.getElementById("fortify-report-container")
-    )
+    console.log("Fortify Report: displayReports called with", attachmentClient ? "valid client" : "null client");
+    
+    try {
+        const container = document.getElementById("fortify-report-container");
+        if (!container) {
+            console.error("Fortify Report: Container element not found!");
+            return;
+        }
+        
+        console.log("Fortify Report: Rendering React component...");
+        
+        ReactDOM.render(
+            <FortifyReportPanel attachmentClient={attachmentClient} />, 
+            container
+        );
+        
+        console.log("Fortify Report: React component rendered successfully");
+    } catch (error) {
+        console.error("Fortify Report: Error in displayReports", error);
+        
+        // Fallback error display
+        const container = document.getElementById("fortify-report-container");
+        if (container) {
+            container.innerHTML = `
+                <div style="padding: 20px; text-align: center; color: red;">
+                    <h3>Fortify Report Error</h3>
+                    <p>Failed to load the Fortify report: ${error instanceof Error ? error.message : String(error)}</p>
+                    <p>Check the browser console for more details.</p>
+                </div>
+            `;
+        }
+    }
 }
 
 abstract class AttachmentClient {
@@ -99,7 +131,9 @@ abstract class AttachmentClient {
         if (this.authHeaders === undefined) {
             console.log('Fortify Report: Getting access token');
             const accessToken = await SDK.getAccessToken()
-            const b64encodedAuth = Buffer.from(':' + accessToken).toString('base64')
+            
+            // FIXED: Use browser-compatible base64 encoding instead of Buffer
+            const b64encodedAuth = btoa(':' + accessToken)
             this.authHeaders = { headers: {'Authorization': 'Basic ' + b64encodedAuth} }
         }
         console.log("Fortify Report: Getting attachment content for " + attachmentName);
@@ -152,6 +186,7 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
 
     constructor(props: FortifyReportPanelProps) {
         super(props);
+        console.log("Fortify Report: FortifyReportPanel constructor called");
         this.state = {
             reportData: null,
             loading: true,
@@ -165,17 +200,19 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
     }
 
     componentDidMount() {
+        console.log("Fortify Report: FortifyReportPanel componentDidMount");
         this.loadReportData();
     }
 
     componentDidUpdate(prevProps: FortifyReportPanelProps) {
         if (prevProps.attachmentClient !== this.props.attachmentClient) {
+            console.log("Fortify Report: AttachmentClient changed, reloading data");
             this.loadReportData();
         }
     }
 
     private addDebugInfo(message: string) {
-        console.log(`DEBUG: ${message}`);
+        console.log(`Fortify Report DEBUG: ${message}`);
         this.setState(prevState => ({
             debugInfo: [...prevState.debugInfo, message]
         }));
@@ -370,50 +407,48 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
     }
 
     render() {
+        console.log("Fortify Report: FortifyReportPanel render called", this.state.loading ? "loading" : "loaded");
+        
         const { reportData, loading, error, filteredIssues, debugInfo } = this.state;
 
         if (loading) {
             return (
-                <Page>
-                    <Card className="fortify-report-card">
-                        <div className="loading-container">
-                            <div className="spinner"></div>
-                            <p>Loading Fortify Security Auditor report...</p>
-                            {debugInfo.length > 0 && (
-                                <div style={{marginTop: '20px', fontSize: '12px', color: '#666'}}>
-                                    <strong>Debug Info:</strong>
-                                    <ul style={{textAlign: 'left', maxHeight: '200px', overflow: 'auto'}}>
-                                        {debugInfo.map((info, index) => (
-                                            <li key={index}>{info}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
-                    </Card>
-                </Page>
+                <Card className="fortify-report-card">
+                    <div className="loading-container">
+                        <div className="spinner"></div>
+                        <p>Loading Fortify Security Auditor report...</p>
+                        {debugInfo.length > 0 && (
+                            <div style={{marginTop: '20px', fontSize: '12px', color: '#666'}}>
+                                <strong>Debug Info:</strong>
+                                <ul style={{textAlign: 'left', maxHeight: '200px', overflow: 'auto'}}>
+                                    {debugInfo.map((info, index) => (
+                                        <li key={index}>{info}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                </Card>
             );
         }
 
         if (!reportData) {
             return (
-                <Page>
-                    <Card className="fortify-report-card">
-                        <div className="error-container">
-                            <p>No report data available</p>
-                            {debugInfo.length > 0 && (
-                                <div style={{marginTop: '20px', fontSize: '12px', color: '#666'}}>
-                                    <strong>Debug Info:</strong>
-                                    <ul style={{textAlign: 'left'}}>
-                                        {debugInfo.map((info, index) => (
-                                            <li key={index}>{info}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
-                    </Card>
-                </Page>
+                <Card className="fortify-report-card">
+                    <div className="error-container">
+                        <p>No report data available</p>
+                        {debugInfo.length > 0 && (
+                            <div style={{marginTop: '20px', fontSize: '12px', color: '#666'}}>
+                                <strong>Debug Info:</strong>
+                                <ul style={{textAlign: 'left'}}>
+                                    {debugInfo.map((info, index) => (
+                                        <li key={index}>{info}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                </Card>
             );
         }
 
@@ -429,164 +464,167 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
         const isShowingMockData = reportData.appName === 'MockApp';
 
         return (
-            <Page>
-                <Card className="fortify-report-card">
-                    <div className="fortify-report">
-                        <div className="header">
-                            <h2>Fortify SSC Vulnerability Report</h2>
-                            <div className="app-info">
-                                Application: {reportData.appName} - Version: {reportData.appVersion} - 
-                                Last Updated: {new Date(reportData.scanDate).toLocaleString()} - 
-                                Total Issues: {reportData.totalCount} - 
-                                Classification: Security Auditor View
-                                {isShowingMockData && <span style={{color: '#ff6b35', fontWeight: 'bold'}}> (MOCK DATA)</span>}
+            <Card className="fortify-report-card">
+                <div className="fortify-report">
+                    <div className="header">
+                        <h2>Fortify SSC Vulnerability Report</h2>
+                        <div className="app-info">
+                            Application: {reportData.appName} - Version: {reportData.appVersion} - 
+                            Last Updated: {new Date(reportData.scanDate).toLocaleString()} - 
+                            Total Issues: {reportData.totalCount} - 
+                            Classification: Security Auditor View
+                            {isShowingMockData && <span style={{color: '#ff6b35', fontWeight: 'bold'}}> (MOCK DATA)</span>}
+                        </div>
+                        {error && <div className="error-banner">⚠️ {error}</div>}
+                        {isShowingMockData && (
+                            <div className="error-banner">
+                                📊 This report is showing sample data. Real Fortify SSC data was not available during the build. 
+                                Check the build logs for connection details.
                             </div>
-                            {error && <div className="error-banner">⚠️ {error}</div>}
-                            {isShowingMockData && (
-                                <div className="error-banner">
-                                    📊 This report is showing sample data. Real Fortify SSC data was not available during the build. 
-                                    Check the build logs for connection details.
-                                </div>
-                            )}
+                        )}
 
-                            {debugInfo.length > 0 && (
-                                <details style={{marginTop: '10px'}}>
-                                    <summary style={{cursor: 'pointer', fontSize: '12px', color: '#666'}}>
-                                        Show Debug Information ({debugInfo.length} items)
-                                    </summary>
-                                    <div style={{marginTop: '10px', fontSize: '11px', color: '#666', maxHeight: '150px', overflow: 'auto', background: '#f8f9fa', padding: '10px', borderRadius: '4px'}}>
-                                        {debugInfo.map((info, index) => (
-                                            <div key={index}>{info}</div>
-                                        ))}
-                                    </div>
-                                </details>
-                            )}
-                        </div>
-                        
-                        <div className="controls">
-                            <div className="filter-group">
-                                <select 
-                                    value={this.state.severityFilter} 
-                                    onChange={this.handleSeverityFilterChange}
-                                    className="filter-select"
-                                >
-                                    <option value="">All Severities</option>
-                                    <option value="Critical">Critical</option>
-                                    <option value="High">High</option>
-                                    <option value="Medium">Medium</option>
-                                    <option value="Low">Low</option>
-                                </select>
-                                
-                                <select 
-                                    value={this.state.priorityFilter} 
-                                    onChange={this.handlePriorityFilterChange}
-                                    className="filter-select"
-                                >
-                                    <option value="">All Priorities</option>
-                                    <option value="Critical">Critical</option>
-                                    <option value="High">High</option>
-                                    <option value="Medium">Medium</option>
-                                    <option value="Low">Low</option>
-                                </select>
-                            </div>
-                            <button onClick={this.handleRefresh} className="refresh-btn" disabled={loading}>
-                                {loading ? 'Refreshing...' : 'Reload Data'}
-                            </button>
-                        </div>
-                        
-                        <div className="stats-summary">
-                            <div className="stat-card">
-                                <div className="stat-value">{stats.total}</div>
-                                <div className="stat-label">Total Issues</div>
-                            </div>
-                            <div className="stat-card critical">
-                                <div className="stat-value">{stats.critical}</div>
-                                <div className="stat-label">Critical</div>
-                            </div>
-                            <div className="stat-card high">
-                                <div className="stat-value">{stats.high}</div>
-                                <div className="stat-label">High</div>
-                            </div>
-                            <div className="stat-card medium">
-                                <div className="stat-value">{stats.medium}</div>
-                                <div className="stat-label">Medium</div>
-                            </div>
-                            <div className="stat-card low">
-                                <div className="stat-value">{stats.low}</div>
-                                <div className="stat-label">Low</div>
-                            </div>
-                        </div>
-
-                        {/* Show Security Auditor View info */}
-                        <div style={{marginBottom: '20px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '14px'}}>
-                            <strong>Classification:</strong> Security Auditor View (Fortify Default)
-                            <br />
-                            <em>Issues are classified into Critical, High, Medium, and Low folders based on Fortify's impact, accuracy, probability, and confidence values.</em>
-                        </div>
-
-                        {/* Show sample folderGuid mapping for debugging */}
-                        {!isShowingMockData && filteredIssues.length > 0 && (
-                            <details style={{marginBottom: '20px'}}>
+                        {debugInfo.length > 0 && (
+                            <details style={{marginTop: '10px'}}>
                                 <summary style={{cursor: 'pointer', fontSize: '12px', color: '#666'}}>
-                                    Show Sample Issue Classification (for debugging)
+                                    Show Debug Information ({debugInfo.length} items)
                                 </summary>
-                                <div style={{fontSize: '11px', color: '#666', background: '#f8f9fa', padding: '10px', borderRadius: '4px', marginTop: '5px'}}>
-                                    {filteredIssues.slice(0, 5).map(issue => (
-                                        <div key={issue.id}>
-                                            {issue.category}: folderGuid="{issue.folderGuid}" → {issue.folderName} (#{issue.folderColor})
-                                        </div>
+                                <div style={{marginTop: '10px', fontSize: '11px', color: '#666', maxHeight: '150px', overflow: 'auto', background: '#f8f9fa', padding: '10px', borderRadius: '4px'}}>
+                                    {debugInfo.map((info, index) => (
+                                        <div key={index}>{info}</div>
                                     ))}
-                                    {filteredIssues.filter(i => !i.folderGuid || i.folderName === 'Unknown').length > 0 && (
-                                        <div style={{color: '#cc0000', fontWeight: 'bold'}}>
-                                            ⚠️ {filteredIssues.filter(i => !i.folderGuid || i.folderName === 'Unknown').length} issues have missing or unknown classification!
-                                        </div>
-                                    )}
                                 </div>
                             </details>
                         )}
-                        
-                        <table className="issues-table">
-                            <thead>
+                    </div>
+                    
+                    <div className="controls">
+                        <div className="filter-group">
+                            <select 
+                                value={this.state.severityFilter} 
+                                onChange={this.handleSeverityFilterChange}
+                                className="filter-select"
+                            >
+                                <option value="">All Severities</option>
+                                <option value="Critical">Critical</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                            </select>
+                            
+                            <select 
+                                value={this.state.priorityFilter} 
+                                onChange={this.handlePriorityFilterChange}
+                                className="filter-select"
+                            >
+                                <option value="">All Priorities</option>
+                                <option value="Critical">Critical</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                            </select>
+                        </div>
+                        <button onClick={this.handleRefresh} className="refresh-btn" disabled={loading}>
+                            {loading ? 'Refreshing...' : 'Reload Data'}
+                        </button>
+                    </div>
+                    
+                    <div className="stats-summary">
+                        <div className="stat-card">
+                            <div className="stat-value">{stats.total}</div>
+                            <div className="stat-label">Total Issues</div>
+                        </div>
+                        <div className="stat-card critical">
+                            <div className="stat-value">{stats.critical}</div>
+                            <div className="stat-label">Critical</div>
+                        </div>
+                        <div className="stat-card high">
+                            <div className="stat-value">{stats.high}</div>
+                            <div className="stat-label">High</div>
+                        </div>
+                        <div className="stat-card medium">
+                            <div className="stat-value">{stats.medium}</div>
+                            <div className="stat-label">Medium</div>
+                        </div>
+                        <div className="stat-card low">
+                            <div className="stat-value">{stats.low}</div>
+                            <div className="stat-label">Low</div>
+                        </div>
+                    </div>
+
+                    {/* Status indicator */}
+                    <div style={{ color: '#28a745', padding: '10px', background: '#d4edda', borderRadius: '4px', marginBottom: '20px' }}>
+                        ✅ Extension loaded successfully with React {React.version || "18"} - Buffer issue fixed!
+                    </div>
+
+                    {/* Show Security Auditor View info */}
+                    <div style={{marginBottom: '20px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '14px'}}>
+                        <strong>Classification:</strong> Security Auditor View (Fortify Default)
+                        <br />
+                        <em>Issues are classified into Critical, High, Medium, and Low folders based on Fortify's impact, accuracy, probability, and confidence values.</em>
+                    </div>
+
+                    {/* Show sample folderGuid mapping for debugging */}
+                    {!isShowingMockData && filteredIssues.length > 0 && (
+                        <details style={{marginBottom: '20px'}}>
+                            <summary style={{cursor: 'pointer', fontSize: '12px', color: '#666'}}>
+                                Show Sample Issue Classification (for debugging)
+                            </summary>
+                            <div style={{fontSize: '11px', color: '#666', background: '#f8f9fa', padding: '10px', borderRadius: '4px', marginTop: '5px'}}>
+                                {filteredIssues.slice(0, 5).map(issue => (
+                                    <div key={issue.id}>
+                                        {issue.category}: folderGuid="{issue.folderGuid}" → {issue.folderName} (#{issue.folderColor})
+                                    </div>
+                                ))}
+                                {filteredIssues.filter(i => !i.folderGuid || i.folderName === 'Unknown').length > 0 && (
+                                    <div style={{color: '#cc0000', fontWeight: 'bold'}}>
+                                        ⚠️ {filteredIssues.filter(i => !i.folderGuid || i.folderName === 'Unknown').length} issues have missing or unknown classification!
+                                    </div>
+                                )}
+                            </div>
+                        </details>
+                    )}
+                    
+                    <table className="issues-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Primary Location</th>
+                                <th>Analysis Type</th>
+                                <th>Priority</th>
+                                <th>Tagged</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredIssues.length === 0 ? (
                                 <tr>
-                                    <th>Category</th>
-                                    <th>Primary Location</th>
-                                    <th>Analysis Type</th>
-                                    <th>Priority</th>
-                                    <th>Tagged</th>
+                                    <td colSpan={5} style={{textAlign: 'center', padding: '20px'}}>
+                                        No issues found matching the current criteria.
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {filteredIssues.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={5} style={{textAlign: 'center', padding: '20px'}}>
-                                            No issues found matching the current criteria.
+                            ) : (
+                                filteredIssues.map(issue => (
+                                    <tr key={issue.id}>
+                                        <td>{issue.category || issue.issueName}</td>
+                                        <td>{issue.primaryLocation}:{issue.lineNumber}</td>
+                                        <td>{issue.kingdom || 'N/A'}</td>
+                                        <td className={`priority-cell ${issue.folderName}`} style={{color: `#${issue.folderColor}`}}>
+                                            {issue.folderName}
+                                        </td>
+                                        <td className="tag-cell">
+                                            {(issue.likelihood === 'Likely' || issue.confidence === 'High') && (
+                                                <span className="tag exploitable">Exploitable</span>
+                                            )}
+                                            {issue.confidence === 'Low' && (
+                                                <span className="tag suspicious">Suspicious</span>
+                                            )}
                                         </td>
                                     </tr>
-                                ) : (
-                                    filteredIssues.map(issue => (
-                                        <tr key={issue.id}>
-                                            <td>{issue.category || issue.issueName}</td>
-                                            <td>{issue.primaryLocation}:{issue.lineNumber}</td>
-                                            <td>{issue.kingdom || 'N/A'}</td>
-                                            <td className={`priority-cell ${issue.folderName}`} style={{color: `#${issue.folderColor}`}}>
-                                                {issue.folderName}
-                                            </td>
-                                            <td className="tag-cell">
-                                                {(issue.likelihood === 'Likely' || issue.confidence === 'High') && (
-                                                    <span className="tag exploitable">Exploitable</span>
-                                                )}
-                                                {issue.confidence === 'Low' && (
-                                                    <span className="tag suspicious">Suspicious</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-            </Page>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
         );
     }
 }

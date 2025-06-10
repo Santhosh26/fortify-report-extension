@@ -13,11 +13,17 @@ module.exports = {
         alias: {
             "azure-devops-extension-sdk": path.resolve("node_modules/azure-devops-extension-sdk")
         },
+        fallback: {
+            "url": false,
+            "path": false,
+            "fs": false
+        }
     },
     
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: '[name].js'
+        filename: '[name].js',
+        clean: false  // CRITICAL: Don't clean to preserve task build output
     },
     
     stats: {
@@ -31,7 +37,11 @@ module.exports = {
                 use: {
                     loader: "ts-loader",
                     options: {
-                        transpileOnly: true
+                        transpileOnly: true,
+                        compilerOptions: {
+                            target: "es2018",
+                            module: "es2015"
+                        }
                     }
                 },
                 exclude: /node_modules/
@@ -51,23 +61,31 @@ module.exports = {
             },
             {
                 test: /\.(woff|woff2|eot|ttf|otf)$/,
-                use: [{
-                    loader: 'file-loader',
-                    options: {
-                        name: '[name].[ext]'
-                    }
-                }]
+                type: 'asset/resource',
+                generator: {
+                    filename: '[name][ext]'
+                }
             },
             {
                 test: /\.html$/,
-                loader: "file-loader"
+                type: 'asset/resource',
+                generator: {
+                    filename: '[name][ext]'
+                }
             }
         ]
     },
     
     plugins: [
-        new CopyWebpackPlugin([
-            { from: "src/tabContent.html", to: "tabContent.html" }
-        ])
-    ]
+        new CopyWebpackPlugin({
+            patterns: [
+                { from: "src/tabContent.html", to: "tabContent.html" },
+                { from: "images", to: "images" } 
+            ]
+        })
+    ],
+
+    optimization: {
+        minimize: true
+    }
 };
