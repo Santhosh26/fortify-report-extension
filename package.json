@@ -43,7 +43,7 @@
     "build-tab-dev": "webpack --config webpack.tab.config.js --mode development",
     "verify-build": "node -e \"const fs=require('fs'); const p='dist/task'; if(!fs.existsSync(p)) throw new Error('dist/task missing!'); if(!fs.existsSync(p+'/task.js')) throw new Error('task.js missing!'); if(!fs.existsSync(p+'/task.json')) throw new Error('task.json missing!'); console.log('✓ Build verification passed');\"",
     "postbuild": "npm run package-extension",
-    "package-extension": "tfx extension create --manifest-globs vss-extension.json",
+    "package-extension": "tfx extension create --manifest-globs azure-devops-extension.json",
     "dev": "webpack --config webpack.tab.config.js --mode development --watch",
     "package": "npm run build",
     "type-check": "tsc --noEmit",

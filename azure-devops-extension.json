@@ -8,7 +8,7 @@
     "public": false,
     "categories": ["Azure Pipelines"],
     "icons": {
-        "default": "images/ot-logo-128px.png"
+        "default": "icon.png"
     },
     "targets": [
         {
