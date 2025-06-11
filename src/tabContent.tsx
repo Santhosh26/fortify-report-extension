@@ -50,48 +50,40 @@ interface ReportData {
 SDK.init()
 SDK.ready().then(() => {
     try {
-        console.log("Fortify Report: SDK ready, initializing...");
         const config = SDK.getConfiguration()
         config.onBuildChanged((build: Build) => {
-            console.log("Fortify Report: Build changed event received", build);
             let buildAttachmentClient = new BuildAttachmentClient(build)
             buildAttachmentClient.init().then(() => {
-                console.log("Fortify Report: Attachment client initialized, displaying reports");
                 displayReports(buildAttachmentClient)
             }).catch(error => {
-                console.error("Fortify Report: Error initializing attachment client", error);
+                console.error("Failed to initialize attachment client:", error);
                 displayReports(null);
             })
         })
     } catch(error) {
-        console.error("Fortify Report: SDK initialization error", error);
+        console.error("SDK initialization error:", error);
         displayReports(null);
     }
 }).catch(error => {
-    console.error("Fortify Report: SDK.ready() failed", error);
+    console.error("SDK ready failed:", error);
     displayReports(null);
 })
 
 function displayReports(attachmentClient: AttachmentClient | null) {
-    console.log("Fortify Report: displayReports called with", attachmentClient ? "valid client" : "null client");
-    
     try {
         const container = document.getElementById("fortify-report-container");
         if (!container) {
-            console.error("Fortify Report: Container element not found!");
+            console.error("Container element not found");
             return;
         }
-        
-        console.log("Fortify Report: Rendering React component...");
         
         ReactDOM.render(
             <FortifyReportPanel attachmentClient={attachmentClient} />, 
             container
         );
         
-        console.log("Fortify Report: React component rendered successfully");
     } catch (error) {
-        console.error("Fortify Report: Error in displayReports", error);
+        console.error("Error in displayReports:", error);
         
         // Fallback error display
         const container = document.getElementById("fortify-report-container");
@@ -129,14 +121,11 @@ abstract class AttachmentClient {
 
     public async getAttachmentContent(attachmentName: string): Promise<string> {
         if (this.authHeaders === undefined) {
-            console.log('Fortify Report: Getting access token');
             const accessToken = await SDK.getAccessToken()
-            
-            // FIXED: Use browser-compatible base64 encoding instead of Buffer
             const b64encodedAuth = btoa(':' + accessToken)
             this.authHeaders = { headers: {'Authorization': 'Basic ' + b64encodedAuth} }
         }
-        console.log("Fortify Report: Getting attachment content for " + attachmentName);
+        
         const attachment = this.getDownloadableAttachment(attachmentName)
         const response = await fetch(attachment._links.self.href, this.authHeaders)
         if (!response.ok) {
@@ -156,14 +145,12 @@ class BuildAttachmentClient extends AttachmentClient {
     }
 
     public async init() {
-        console.log("Fortify Report: Initializing attachment client for build", this.build.id);
         const buildClient: BuildRestClient = getClient(BuildRestClient)
         this.attachments = await buildClient.getAttachments(
             this.build.project.id, 
             this.build.id, 
             ATTACHMENT_TYPE
         )
-        console.log("Fortify Report: Found attachments", this.attachments);
     }
 }
 
@@ -177,58 +164,46 @@ interface FortifyReportPanelState {
     error: string | null
     filteredIssues: FortifyIssue[]
     severityFilter: string
-    priorityFilter: string
     config: FortifyConfig | null
-    debugInfo: string[]
+    statusMessage: string
 }
 
 class FortifyReportPanel extends React.Component<FortifyReportPanelProps, FortifyReportPanelState> {
 
     constructor(props: FortifyReportPanelProps) {
         super(props);
-        console.log("Fortify Report: FortifyReportPanel constructor called");
         this.state = {
             reportData: null,
             loading: true,
             error: null,
             filteredIssues: [],
             severityFilter: '',
-            priorityFilter: '',
             config: null,
-            debugInfo: []
+            statusMessage: 'Loading Fortify report...'
         }
     }
 
     componentDidMount() {
-        console.log("Fortify Report: FortifyReportPanel componentDidMount");
         this.loadReportData();
     }
 
     componentDidUpdate(prevProps: FortifyReportPanelProps) {
         if (prevProps.attachmentClient !== this.props.attachmentClient) {
-            console.log("Fortify Report: AttachmentClient changed, reloading data");
             this.loadReportData();
         }
     }
 
-    private addDebugInfo(message: string) {
-        console.log(`Fortify Report DEBUG: ${message}`);
-        this.setState(prevState => ({
-            debugInfo: [...prevState.debugInfo, message]
-        }));
-    }
-
     private async loadReportData() {
-        this.addDebugInfo("Starting loadReportData (Security Auditor View)");
+        this.setState({ statusMessage: 'Loading report data...' });
         
         if (!this.props.attachmentClient) {
-            this.addDebugInfo("No attachment client available");
             this.setState({
                 reportData: this.getMockData("No attachment client available"),
                 loading: false,
-                error: "Could not load build attachments - using mock data",
+                error: "Could not load build attachments",
                 filteredIssues: [],
-                config: null
+                config: null,
+                statusMessage: 'Using sample data'
             }, () => {
                 this.setState({ 
                     filteredIssues: this.state.reportData?.issues || []
@@ -241,12 +216,6 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
             this.setState({ loading: true, error: null });
             
             const attachments = this.props.attachmentClient.getAttachments();
-            this.addDebugInfo(`Found ${attachments.length} attachments`);
-            
-            // Log all attachment names for debugging
-            attachments.forEach((att, index) => {
-                this.addDebugInfo(`Attachment ${index}: ${att.name}`);
-            });
             
             // Find the configuration attachment
             const configAttachment = attachments.find(a => a.name.includes('.config'));
@@ -255,77 +224,62 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                 throw new Error("Fortify configuration attachment not found");
             }
 
-            this.addDebugInfo(`Found config attachment: ${configAttachment.name}`);
             const configContent = await this.props.attachmentClient.getAttachmentContent(configAttachment.name);
             const config: FortifyConfig = JSON.parse(configContent);
             
-            this.addDebugInfo(`Loaded configuration for ${config.appName} v${config.appVersion}`);
-            this.setState({ config });
+            this.setState({ config, statusMessage: `Loading data for ${config.appName} v${config.appVersion}...` });
 
             // Try to find pre-fetched report data attachment
             const reportAttachment = attachments.find(a => a.name.includes('.report'));
             
             if (reportAttachment) {
-                this.addDebugInfo(`Found report attachment: ${reportAttachment.name}`);
                 const reportContent = await this.props.attachmentClient.getAttachmentContent(reportAttachment.name);
-                
-                this.addDebugInfo(`Report content length: ${reportContent.length} characters`);
-                this.addDebugInfo(`Report content preview: ${reportContent.substring(0, 200)}...`);
-                
                 const reportData: ReportData = JSON.parse(reportContent);
-                
-                this.addDebugInfo(`Successfully parsed report data: ${reportData.totalCount} issues`);
-
-                // Check issue folderGuid data
-                const sampleIssues = reportData.issues.slice(0, 5);
-                this.addDebugInfo(`Sample issue classification:`);
-                sampleIssues.forEach(issue => {
-                    this.addDebugInfo(`   - ${issue.category}: ${issue.folderName} (${issue.folderGuid})`);
-                });
                 
                 this.setState({
                     reportData,
                     loading: false,
                     error: null,
-                    filteredIssues: reportData.issues
+                    filteredIssues: reportData.issues,
+                    statusMessage: `Loaded ${reportData.totalCount} issues`
                 });
             } else {
-                this.addDebugInfo("No report attachment found - this means the task couldn't fetch data");
-                const mockData = this.getMockData("No pre-fetched Fortify data available - there may have been connection issues during the build");
+                console.warn("No report attachment found - data not available from build task");
+                const mockData = this.getMockData("No live data available from Fortify SSC");
                 this.setState({
                     reportData: mockData,
                     loading: false,
-                    error: "No live data available - check the build logs for connection issues. Contact your administrator to verify Fortify SSC connectivity from the build agent.",
-                    filteredIssues: mockData.issues
+                    error: "No live data available - check build logs for connection issues",
+                    filteredIssues: mockData.issues,
+                    statusMessage: 'Using sample data'
                 });
             }
             
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.addDebugInfo(`Error loading report data: ${errorMessage}`);
-            console.error("Fortify Report: Error loading report data", error);
-            const mockData = this.getMockData(`Error loading report data: ${errorMessage}`);
+            console.error("Error loading report data:", error);
+            const mockData = this.getMockData(`Error: ${errorMessage}`);
             this.setState({
                 reportData: mockData,
                 loading: false,
                 error: errorMessage,
-                filteredIssues: mockData.issues
+                filteredIssues: mockData.issues,
+                statusMessage: 'Error loading data'
             });
         }
     }
 
     private getMockData(reason: string): ReportData {
-        console.warn(`Fortify Report: Using mock data. Reason: ${reason}`);
         return {
             issues: [
                 { 
                     id: 'M1', 
-                    issueName: 'Mock Issue: SQL Injection', 
+                    issueName: 'SQL Injection', 
                     severity: 'Critical', 
                     priority: 'Critical', 
                     likelihood: 'Likely', 
                     confidence: 'High', 
-                    primaryLocation: 'mock/Login.java', 
+                    primaryLocation: 'src/Login.java', 
                     lineNumber: 101, 
                     kingdom: 'Input Validation', 
                     category: 'A1-Injection',
@@ -336,12 +290,12 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                 },
                 { 
                     id: 'M2', 
-                    issueName: 'Mock Issue: XSS Basic', 
+                    issueName: 'Cross-Site Scripting', 
                     severity: 'High', 
                     priority: 'High', 
                     likelihood: 'Possible', 
                     confidence: 'Medium', 
-                    primaryLocation: 'mock/Profile.jsp', 
+                    primaryLocation: 'src/Profile.jsp', 
                     lineNumber: 55, 
                     kingdom: 'Environment', 
                     category: 'A7-XSS',
@@ -352,12 +306,12 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                 },
                 { 
                     id: 'M3', 
-                    issueName: 'Mock Issue: Weak Hashing', 
+                    issueName: 'Weak Cryptographic Hash', 
                     severity: 'Medium', 
                     priority: 'Medium', 
                     likelihood: 'Unlikely', 
                     confidence: 'Low', 
-                    primaryLocation: 'mock/utils/Crypto.cs', 
+                    primaryLocation: 'src/utils/Crypto.cs', 
                     lineNumber: 23, 
                     kingdom: 'Security Features', 
                     category: 'Password Management',
@@ -367,8 +321,8 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                     folderColor: 'f6aa58'
                 }
             ],
-            appName: 'MockApp',
-            appVersion: '0.0.0',
+            appName: 'Sample Application',
+            appVersion: '1.0.0',
             scanDate: new Date().toISOString(),
             totalCount: 3
         };
@@ -379,10 +333,6 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
         this.setState({ severityFilter }, this.applyFilters);
     }
 
-    private handlePriorityFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const priorityFilter = event.target.value;
-        this.setState({ priorityFilter }, this.applyFilters);
-    }
 
     private applyFilters = () => {
         if (!this.state.reportData) return;
@@ -394,10 +344,6 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
             filteredIssues = filteredIssues.filter(issue => issue.folderName === this.state.severityFilter);
         }
         
-        // Filter by priority (folder name)  
-        if (this.state.priorityFilter) {
-            filteredIssues = filteredIssues.filter(issue => issue.folderName === this.state.priorityFilter);
-        }
 
         this.setState({ filteredIssues });
     }
@@ -407,26 +353,14 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
     }
 
     render() {
-        console.log("Fortify Report: FortifyReportPanel render called", this.state.loading ? "loading" : "loaded");
-        
-        const { reportData, loading, error, filteredIssues, debugInfo } = this.state;
+        const { reportData, loading, error, filteredIssues, statusMessage } = this.state;
 
         if (loading) {
             return (
                 <Card className="fortify-report-card">
                     <div className="loading-container">
                         <div className="spinner"></div>
-                        <p>Loading Fortify Security Auditor report...</p>
-                        {debugInfo.length > 0 && (
-                            <div style={{marginTop: '20px', fontSize: '12px', color: '#666'}}>
-                                <strong>Debug Info:</strong>
-                                <ul style={{textAlign: 'left', maxHeight: '200px', overflow: 'auto'}}>
-                                    {debugInfo.map((info, index) => (
-                                        <li key={index}>{info}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
+                        <p>{statusMessage}</p>
                     </div>
                 </Card>
             );
@@ -437,16 +371,7 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                 <Card className="fortify-report-card">
                     <div className="error-container">
                         <p>No report data available</p>
-                        {debugInfo.length > 0 && (
-                            <div style={{marginTop: '20px', fontSize: '12px', color: '#666'}}>
-                                <strong>Debug Info:</strong>
-                                <ul style={{textAlign: 'left'}}>
-                                    {debugInfo.map((info, index) => (
-                                        <li key={index}>{info}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
+                        {error && <p style={{color: '#cc0000'}}>{error}</p>}
                     </div>
                 </Card>
             );
@@ -460,8 +385,9 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
             low: filteredIssues.filter(i => i.folderName === 'Low').length
         };
 
-        // Check if we're showing mock data
-        const isShowingMockData = reportData.appName === 'MockApp';
+        // Check if we're showing sample/mock data
+        const isShowingSampleData = reportData.appName === 'Sample Application' || 
+                                   reportData.issues.some(i => i.id.startsWith('M'));
 
         return (
             <Card className="fortify-report-card">
@@ -471,29 +397,15 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                         <div className="app-info">
                             Application: {reportData.appName} - Version: {reportData.appVersion} - 
                             Last Updated: {new Date(reportData.scanDate).toLocaleString()} - 
-                            Total Issues: {reportData.totalCount} - 
-                            Classification: Security Auditor View
-                            {isShowingMockData && <span style={{color: '#ff6b35', fontWeight: 'bold'}}> (MOCK DATA)</span>}
+                            Total Issues: {reportData.totalCount}
+                            {isShowingSampleData && <span style={{color: '#ff6b35', fontWeight: 'bold'}}> (SAMPLE DATA)</span>}
                         </div>
                         {error && <div className="error-banner">⚠️ {error}</div>}
-                        {isShowingMockData && (
+                        {isShowingSampleData && (
                             <div className="error-banner">
-                                📊 This report is showing sample data. Real Fortify SSC data was not available during the build. 
+                                📊 This report shows sample data. Live Fortify SSC data was not available during the build. 
                                 Check the build logs for connection details.
                             </div>
-                        )}
-
-                        {debugInfo.length > 0 && (
-                            <details style={{marginTop: '10px'}}>
-                                <summary style={{cursor: 'pointer', fontSize: '12px', color: '#666'}}>
-                                    Show Debug Information ({debugInfo.length} items)
-                                </summary>
-                                <div style={{marginTop: '10px', fontSize: '11px', color: '#666', maxHeight: '150px', overflow: 'auto', background: '#f8f9fa', padding: '10px', borderRadius: '4px'}}>
-                                    {debugInfo.map((info, index) => (
-                                        <div key={index}>{info}</div>
-                                    ))}
-                                </div>
-                            </details>
                         )}
                     </div>
                     
@@ -511,17 +423,6 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                                 <option value="Low">Low</option>
                             </select>
                             
-                            <select 
-                                value={this.state.priorityFilter} 
-                                onChange={this.handlePriorityFilterChange}
-                                className="filter-select"
-                            >
-                                <option value="">All Priorities</option>
-                                <option value="Critical">Critical</option>
-                                <option value="High">High</option>
-                                <option value="Medium">Medium</option>
-                                <option value="Low">Low</option>
-                            </select>
                         </div>
                         <button onClick={this.handleRefresh} className="refresh-btn" disabled={loading}>
                             {loading ? 'Refreshing...' : 'Reload Data'}
@@ -551,33 +452,11 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                         </div>
                     </div>
 
-                    {/* Show Security Auditor View info */}
                     <div style={{marginBottom: '20px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '14px'}}>
                         <strong>Classification:</strong> Security Auditor View (Fortify Default)
                         <br />
-                        <em>Issues are classified into Critical, High, Medium, and Low folders based on Fortify's impact, accuracy, probability, and confidence values.</em>
+                        <em>Issues are classified into Critical, High, Medium, and Low folders based on Fortify's security impact analysis.</em>
                     </div>
-
-                    {/* Show sample folderGuid mapping for debugging */}
-                    {!isShowingMockData && filteredIssues.length > 0 && (
-                        <details style={{marginBottom: '20px'}}>
-                            <summary style={{cursor: 'pointer', fontSize: '12px', color: '#666'}}>
-                                Show Sample Issue Classification (for debugging)
-                            </summary>
-                            <div style={{fontSize: '11px', color: '#666', background: '#f8f9fa', padding: '10px', borderRadius: '4px', marginTop: '5px'}}>
-                                {filteredIssues.slice(0, 5).map(issue => (
-                                    <div key={issue.id}>
-                                        {issue.category}: folderGuid="{issue.folderGuid}" → {issue.folderName} (#{issue.folderColor})
-                                    </div>
-                                ))}
-                                {filteredIssues.filter(i => !i.folderGuid || i.folderName === 'Unknown').length > 0 && (
-                                    <div style={{color: '#cc0000', fontWeight: 'bold'}}>
-                                        ⚠️ {filteredIssues.filter(i => !i.folderGuid || i.folderName === 'Unknown').length} issues have missing or unknown classification!
-                                    </div>
-                                )}
-                            </div>
-                        </details>
-                    )}
                     
                     <table className="issues-table">
                         <thead>
@@ -585,7 +464,7 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                                 <th>Category</th>
                                 <th>Primary Location</th>
                                 <th>Analysis Type</th>
-                                <th>Priority</th>
+                                <th>Severity</th>
                                 <th>Tagged</th>
                             </tr>
                         </thead>
@@ -602,7 +481,7 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                                         <td>{issue.category || issue.issueName}</td>
                                         <td>{issue.primaryLocation}:{issue.lineNumber}</td>
                                         <td>{issue.kingdom || 'N/A'}</td>
-                                        <td className={`priority-cell ${issue.folderName}`} style={{color: `#${issue.folderColor}`}}>
+                                        <td className={`severity-cell ${issue.folderName}`} style={{color: `#${issue.folderColor}`}}>
                                             {issue.folderName}
                                         </td>
                                         <td className="tag-cell">
