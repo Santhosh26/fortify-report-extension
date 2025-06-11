@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "id": "fortify-report-extension",
     "name": "Fortify SSC Report",
-    "version": "10.2",
+    "version": "10.3",
     "publisher": "SanthoshKumar",
     "description": "A detailed Fortify SSC vulnerability report for Azure DevOps",
     "public": true,
@@ -43,7 +43,10 @@
             "targets": ["ms.vss-distributed-task.tasks"],
             "properties": {
                 "name": "task",
-                "displayName": "Fortify SSC Report"
+                "displayName": "Fortify SSC Report",
+                "icons": {
+                    "default": "./images/task-icon.png" 
+                  }
             }
         }
     ],
