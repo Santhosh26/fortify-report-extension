@@ -84,16 +84,33 @@ function displayReports(attachmentClient: AttachmentClient | null) {
         
     } catch (error) {
         
-        // Fallback error display
+        // Fallback error display using safe DOM manipulation
         const container = document.getElementById("fortify-report-container");
         if (container) {
-            container.innerHTML = `
-                <div style="padding: 20px; text-align: center; color: red;">
-                    <h3>Fortify Report Error</h3>
-                    <p>Failed to load the Fortify report: ${error instanceof Error ? error.message : String(error)}</p>
-                    <p>Check the browser console for more details.</p>
-                </div>
-            `;
+            // Clear existing content
+            container.textContent = '';
+            
+            // Create error container
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'padding: 20px; text-align: center; color: red;';
+            
+            // Create and append title
+            const title = document.createElement('h3');
+            title.textContent = 'Fortify Report Error';
+            errorDiv.appendChild(title);
+            
+            // Create and append error message
+            const errorMsg = document.createElement('p');
+            const safeErrorMessage = error instanceof Error ? error.message : String(error);
+            errorMsg.textContent = `Failed to load the Fortify report: ${safeErrorMessage}`;
+            errorDiv.appendChild(errorMsg);
+            
+            // Create and append help text
+            const helpText = document.createElement('p');
+            helpText.textContent = 'Check the browser console for more details.';
+            errorDiv.appendChild(helpText);
+            
+            container.appendChild(errorDiv);
         }
     }
 }
