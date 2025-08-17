@@ -13,7 +13,7 @@
   ],
   "demands": [],
   "version": {
-    "Major": 1,
+    "Major": 2,
     "Minor": 0,
     "Patch": 0
   },
@@ -43,7 +43,7 @@
       "label": "Fortify SSC URL",
       "required": true,
       "groupName": "connection",
-      "helpMarkDown": "The URL of your Fortify SSC instance (e.g., https://your-ssc-instance.com or http://52.67.113.58:8080/ssc)"
+      "helpMarkDown": "The URL of your Fortify SSC instance (e.g., https://your-ssc-instance.com)"
     },
     {
       "name": "ciToken",

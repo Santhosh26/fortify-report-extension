@@ -1,6 +1,6 @@
 {
   "name": "fortify-report-extension",
-  "version": "10.3",
+  "version": "12.0",
   "description": "Fortify SSC Report for Azure DevOps",
   "private": true,
   "author": "Santhosh Kumar",
