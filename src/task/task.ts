@@ -13,6 +13,7 @@ interface FortifyConfig {
     timestamp: string;
     buildId?: string;
     projectId?: string;
+    projectVersionId?: string;
 }
 
 interface FortifyValidationResult {
@@ -24,6 +25,7 @@ interface FortifyValidationResult {
 
 interface FortifyIssue {
     id: string;
+    issueInstanceId: string;
     issueName: string;
     severity: string;
     priority: string;
@@ -46,6 +48,7 @@ interface ReportData {
     appVersion: string;
     scanDate: string;
     totalCount: number;
+    projectVersionId?: string;
 }
 
 // Hardcoded Security Auditor View folder mapping (standard across Fortify instances)
@@ -67,8 +70,6 @@ class FortifySSCValidator {
 
     public async validateConnection(): Promise<FortifyValidationResult> {
         try {
-            console.log('Validating Fortify SSC connection...');
-            
             const testUrl = `${this.sscUrl}/api/v1/projects?limit=1`;
             const response = await this.makeRequest(testUrl);
             
@@ -76,7 +77,6 @@ class FortifySSCValidator {
                 return { success: false, error: 'Unable to connect to Fortify SSC - no response received' };
             }
 
-            console.log('Successfully connected to Fortify SSC');
             return { success: true };
 
         } catch (error) {
@@ -95,8 +95,6 @@ class FortifySSCValidator {
 
     public async validateApplicationAndVersion(appName: string, appVersion: string): Promise<FortifyValidationResult> {
         try {
-            console.log(`Validating application "${appName}" and version "${appVersion}"...`);
-
             const appUrl = `${this.sscUrl}/api/v1/projects?q=name:${encodeURIComponent(appName)}&fields=id`;
             const appResponse = await this.makeRequest(appUrl);
             
@@ -108,7 +106,6 @@ class FortifySSCValidator {
             }
 
             const applicationId = appResponse.data[0].id;
-            console.log(`Found application "${appName}"`);
 
             const versionUrl = `${this.sscUrl}/api/v1/projects/${applicationId}/versions?q=name:"${encodeURIComponent(appVersion)}"`;
             const versionResponse = await this.makeRequest(versionUrl);
@@ -131,13 +128,14 @@ class FortifySSCValidator {
             }
 
             const versionId = versionResponse.data[0].id;
-            console.log(`Found version "${appVersion}"`);
 
-            return { 
+            const result = { 
                 success: true, 
                 applicationId: applicationId.toString(),
                 versionId: versionId.toString()
             };
+            
+            return result;
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -222,9 +220,6 @@ class FortifySSCDataFetcher {
     }
 
     public async fetchReportData(appName: string, appVersion: string, maxIssues: number = 10000): Promise<ReportData> {
-        console.log(`Fetching Fortify data for ${appName} v${appVersion}...`);
-
-        // Step 1: Get project ID
         const projectUrl = `${this.sscUrl}/api/v1/projects?q=name:${encodeURIComponent(appName)}&fields=id`;
         const projectResponse = await this.validator.makeRequest(projectUrl);
         
@@ -234,7 +229,6 @@ class FortifySSCDataFetcher {
         
         const projectId = projectResponse.data[0].id;
 
-        // Step 2: Get version ID
         const versionUrl = `${this.sscUrl}/api/v1/projects/${projectId}/versions?q=name:"${encodeURIComponent(appVersion)}"`;
         const versionResponse = await this.validator.makeRequest(versionUrl);
         
@@ -244,21 +238,16 @@ class FortifySSCDataFetcher {
         
         const versionId = versionResponse.data[0].id;
 
-        // Step 3: Find Security Auditor View FilterSet
         const securityAuditorGuid = await this.findSecurityAuditorFilterSet(versionId);
-
-        // Step 4: Fetch all issues with Security Auditor folder mapping
-        console.log(`Fetching issues from Security Auditor View...`);
         const allIssues = await this.fetchAllIssuesWithSecurityAuditorMapping(versionId, securityAuditorGuid, maxIssues);
-        
-        console.log(`Successfully fetched ${allIssues.length} issues`);
 
         return {
             issues: allIssues,
             appName: appName,
             appVersion: appVersion,
             scanDate: new Date().toISOString(),
-            totalCount: allIssues.length
+            totalCount: allIssues.length,
+            projectVersionId: versionId
         };
     }
 
@@ -270,13 +259,11 @@ class FortifySSCDataFetcher {
             throw new Error('No filter sets found for this project version');
         }
         
-        // Find Security Auditor View (should be default)
         const securityAuditorFilterSet = response.data.find((fs: any) => 
             fs.defaultFilterSet === true || fs.title.includes('Security Auditor')
         );
         
         if (!securityAuditorFilterSet) {
-            // Fallback to first filterset
             return response.data[0].guid;
         }
         
@@ -317,6 +304,7 @@ class FortifySSCDataFetcher {
                 
                 return {
                     id: issue.id?.toString() || '',
+                    issueInstanceId: issue.issueInstanceId || '',
                     issueName: issue.issueName || issue.category || 'Unknown Issue',
                     severity: folderName, // Critical, High, Medium, Low
                     priority: folderName, // Critical, High, Medium, Low
@@ -368,8 +356,6 @@ class FortifySSCDataFetcher {
 
 async function run() {
     try {
-        console.log('Starting Fortify SSC Report task...');
-        
         const sscUrl = tl.getInput('sscUrl', true);
         const ciToken = tl.getInput('ciToken', true);
         const appName = tl.getInput('appName', true);
@@ -395,9 +381,6 @@ async function run() {
             return;
         }
 
-        console.log(`Configuring Fortify SSC Report for: ${appName} v${appVersion}`);
-        console.log(`Fortify SSC URL: ${sscUrl}`);
-
         const fortifyConfig: FortifyConfig = {
             sscUrl: sscUrl,
             ciToken: ciToken,
@@ -408,49 +391,53 @@ async function run() {
             projectId: tl.getVariable('System.TeamProjectId')
         };
 
-        const skipValidation = tl.getBoolInput('skipValidation', false) || 
-                              tl.getVariable('FORTIFY_SKIP_VALIDATION') === 'true';
+        const skipValidationInput = tl.getBoolInput('skipValidation', false);
+        const skipValidationEnv = tl.getVariable('FORTIFY_SKIP_VALIDATION') === 'true';
+        const skipValidation = skipValidationInput || skipValidationEnv;
         
         let reportData: ReportData | null = null;
         let hasValidationErrors = false;
         
         if (!skipValidation) {
-            console.log('Starting Fortify SSC validation...');
-            const validator = new FortifySSCValidator(sscUrl, ciToken);
-            
-            // Connection validation
-            const connectionResult = await validator.validateConnection();
-            if (!connectionResult.success) {
-                tl.warning(`Could not connect to Fortify SSC: ${connectionResult.error}`);
-                hasValidationErrors = true;
-            } else {
-                console.log('Successfully connected to Fortify SSC');
+            try {
+                const validator = new FortifySSCValidator(sscUrl, ciToken);
                 
-                // Application and version validation
-                const appVersionResult = await validator.validateApplicationAndVersion(appName, appVersion);
-                if (!appVersionResult.success) {
-                    tl.warning(`Application/version validation failed: ${appVersionResult.error}`);
+                const connectionResult = await validator.validateConnection();
+                if (!connectionResult.success) {
+                    tl.warning(`Could not connect to Fortify SSC: ${connectionResult.error}`);
                     hasValidationErrors = true;
                 } else {
-                    console.log('Application and version validation successful');
-                    
-                    // Fetch data from Fortify SSC
-                    try {
-                        console.log('Fetching Fortify vulnerability data...');
-                        const dataFetcher = new FortifySSCDataFetcher(sscUrl, ciToken);
-                        reportData = await dataFetcher.fetchReportData(appName, appVersion, maxIssues);
-                        
-                        console.log(`Successfully fetched ${reportData.totalCount} vulnerabilities`);
-                        
-                    } catch (fetchError) {
-                        const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
-                        tl.warning(`Failed to fetch Fortify data: ${errorMessage}`);
+                    const appVersionResult = await validator.validateApplicationAndVersion(appName, appVersion);
+                    if (!appVersionResult.success) {
+                        tl.warning(`Application/version validation failed: ${appVersionResult.error}`);
                         hasValidationErrors = true;
+                    } else {
+                        if (appVersionResult.versionId) {
+                            fortifyConfig.projectVersionId = appVersionResult.versionId;
+                            tl.setVariable('FORTIFY_PROJECT_VERSION_ID', appVersionResult.versionId);
+                        } else {
+                            tl.warning('Project version ID not found in validation result');
+                            hasValidationErrors = true;
+                        }
+                        
+                        try {
+                            const dataFetcher = new FortifySSCDataFetcher(sscUrl, ciToken);
+                            reportData = await dataFetcher.fetchReportData(appName, appVersion, maxIssues);
+                        } catch (fetchError) {
+                            const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+                            tl.warning(`Failed to fetch Fortify data: ${errorMessage}`);
+                            hasValidationErrors = true;
+                        }
                     }
                 }
+            } catch (validationError) {
+                tl.warning(`Validation threw an exception: ${validationError}`);
+                hasValidationErrors = true;
             }
-        } else {
-            console.log('Skipping Fortify SSC validation');
+        }
+
+        if (!fortifyConfig.projectVersionId && !skipValidation) {
+            tl.warning('Unable to determine projectVersionId - SSC links will not work');
         }
 
         // Create output directory
@@ -459,15 +446,12 @@ async function run() {
             fs.mkdirSync(outputDir, { recursive: true });
         }
 
-        // Save configuration
         const configPath = path.join(outputDir, 'fortify-config.json');
         fs.writeFileSync(configPath, JSON.stringify(fortifyConfig, null, 2));
 
-        // Save report data if we fetched it successfully
         if (reportData) {
             const reportPath = path.join(outputDir, 'fortify-report.json');
             fs.writeFileSync(reportPath, JSON.stringify(reportData, null, 2));
-            console.log(`Saved Fortify report data with ${reportData.issues.length} issues`);
         }
 
         // Create the attachment that will trigger the tab to appear
@@ -482,14 +466,11 @@ async function run() {
         
         tl.addAttachment(attachmentType, attachmentName, configPath);
 
-        // Add report data attachment if available
         if (reportData) {
             const reportAttachmentName = `${tabName}.${jobName}.${stageName}.${stageAttempt}.report`;
             const reportPath = path.join(outputDir, 'fortify-report.json');
             tl.addAttachment(attachmentType, reportAttachmentName, reportPath);
         }
-        
-        console.log('Fortify SSC Report tab will be available in the build results');
         
         // Determine final task result
         if (hasValidationErrors) {
@@ -501,13 +482,11 @@ async function run() {
         }
 
     } catch (error: any) {
-        console.error(`Fortify SSC Report Task Error: ${error.message}`);
         tl.setResult(tl.TaskResult.Failed, error.message);
     }
 }
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection:', reason);
     tl.setResult(tl.TaskResult.Failed, 'Unhandled promise rejection');
 });
 
