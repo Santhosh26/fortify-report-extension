@@ -29,7 +29,8 @@ dist
 
 # Dependencies managed by package managers
 /node_modules/
-/claude.md
+/.claude/
+CLAUDE.md
 
 # =============================================================================
 # === Build & Compilation Output ==============================================
