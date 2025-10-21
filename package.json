@@ -1,7 +1,7 @@
 {
   "name": "fortify-report-extension",
-  "version": "12.0",
-  "description": "Fortify SSC Report for Azure DevOps",
+  "version": "17.1",
+  "description": "Fortify Multi-Platform Report for Azure DevOps",
   "private": true,
   "author": "Santhosh Kumar",
   "license": "MIT",

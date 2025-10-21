@@ -15,8 +15,15 @@ import { Card } from "azure-devops-ui/Card"
 const ATTACHMENT_TYPE = "fortify-report";
 
 interface FortifyConfig {
-    sscUrl: string;
-    ciToken: string;
+    providerType?: string;
+    baseUrl: string;
+    // Legacy SSC fields
+    sscUrl?: string;
+    ciToken?: string;
+    // FoD fields
+    apiKey?: string;
+    apiSecret?: string;
+    // Common fields
     appName: string;
     appVersion: string;
     timestamp: string;
@@ -25,8 +32,12 @@ interface FortifyConfig {
 
 interface FortifyIssue {
     id: string;
-    issueInstanceId: string;
-    issueName: string;
+    instanceId: string;
+    name: string;
+    // Legacy field names for backward compatibility
+    issueInstanceId?: string;
+    issueName?: string;
+    // Current fields
     severity: string;
     priority: string;
     likelihood: string;
@@ -35,11 +46,14 @@ interface FortifyIssue {
     lineNumber: number;
     kingdom: string;
     category: string;
-    friority?: number;
-    folderGuid: string;
-    folderId: number;
-    folderName: string;
-    folderColor: string;
+    priority_score?: number;
+    friority?: number; // Legacy
+    folderGuid?: string;
+    folderId?: number;
+    folderName?: string;
+    folderColor?: string;
+    provider?: string;
+    rawData?: any;
 }
 
 interface ReportData {
@@ -49,6 +63,8 @@ interface ReportData {
     scanDate: string;
     totalCount: number;
     projectVersionId?: string;
+    provider?: string;
+    providerUrl?: string;
 }
 
 SDK.init()
@@ -84,16 +100,33 @@ function displayReports(attachmentClient: AttachmentClient | null) {
         
     } catch (error) {
         
-        // Fallback error display
+        // Fallback error display using safe DOM manipulation
         const container = document.getElementById("fortify-report-container");
         if (container) {
-            container.innerHTML = `
-                <div style="padding: 20px; text-align: center; color: red;">
-                    <h3>Fortify Report Error</h3>
-                    <p>Failed to load the Fortify report: ${error instanceof Error ? error.message : String(error)}</p>
-                    <p>Check the browser console for more details.</p>
-                </div>
-            `;
+            // Clear existing content
+            container.textContent = '';
+            
+            // Create error container
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'padding: 20px; text-align: center; color: red;';
+            
+            // Create and append title
+            const title = document.createElement('h3');
+            title.textContent = 'Fortify Report Error';
+            errorDiv.appendChild(title);
+            
+            // Create and append error message
+            const errorMsg = document.createElement('p');
+            const safeErrorMessage = error instanceof Error ? error.message : String(error);
+            errorMsg.textContent = `Failed to load the Fortify report: ${safeErrorMessage}`;
+            errorDiv.appendChild(errorMsg);
+            
+            // Create and append help text
+            const helpText = document.createElement('p');
+            helpText.textContent = 'Check the browser console for more details.';
+            errorDiv.appendChild(helpText);
+            
+            container.appendChild(errorDiv);
         }
     }
 }
@@ -167,14 +200,47 @@ interface FortifyReportPanelState {
     statusMessage: string
 }
 
-// Utility functions for generating SSC URLs
-function generateProjectVersionUrl(sscUrl: string, projectVersionId: string): string {
-    return `${sscUrl.replace(/\/$/, '')}/html/ssc/index.jsp#!/version/${projectVersionId}/fix`;
+// Utility function to get friendly provider name
+function getProviderName(providerType?: string): string {
+    switch (providerType?.toLowerCase()) {
+        case 'fod':
+            return 'Fortify on Demand';
+        case 'ssc':
+            return 'Fortify SSC';
+        default:
+            return 'Fortify SSC';
+    }
 }
 
-function generateIssueUrl(sscUrl: string, projectVersionId: string, issueInstanceId: string): string {
-    const encodedInstanceId = encodeURIComponent(`[instance id]:${issueInstanceId}`);
-    return `${sscUrl.replace(/\/$/, '')}/html/ssc/version/${projectVersionId}/audit?q=${encodedInstanceId}`;
+// Utility functions for generating provider URLs
+function generateProjectVersionUrl(config: FortifyConfig): string {
+    const baseUrl = config.baseUrl || config.sscUrl || '';
+    const versionId = config.projectVersionId || '';
+
+    if (config.providerType === 'fod') {
+        // Transform api.region.fortify.com to region.fortify.com
+        const webUrl = baseUrl.replace('api.', '').replace('/api', '').replace('/v3', '').replace(/\/$/, '');
+        return `${webUrl}/Releases/${versionId}`;
+    } else {
+        // SSC or legacy
+        return `${baseUrl.replace(/\/$/, '')}/html/ssc/index.jsp#!/version/${versionId}/fix`;
+    }
+}
+
+function generateIssueUrl(config: FortifyConfig, issue: FortifyIssue): string {
+    const baseUrl = config.baseUrl || config.sscUrl || '';
+    const versionId = config.projectVersionId || '';
+    const instanceId = issue.instanceId || issue.issueInstanceId || issue.id;
+
+    if (config.providerType === 'fod') {
+        // Transform api.region.fortify.com to region.fortify.com
+        const webUrl = baseUrl.replace('api.', '').replace('/api', '').replace('/v3', '').replace(/\/$/, '');
+        return `${webUrl}/Releases/${versionId}/Issues/${issue.id}`;
+    } else {
+        // SSC or legacy
+        const encodedInstanceId = encodeURIComponent(`[instance id]:${instanceId}`);
+        return `${baseUrl.replace(/\/$/, '')}/html/ssc/version/${versionId}/audit?q=${encodedInstanceId}`;
+    }
 }
 
 class FortifyReportPanel extends React.Component<FortifyReportPanelProps, FortifyReportPanelState> {
@@ -272,7 +338,9 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                     statusMessage: `Loaded ${reportData.totalCount} issues`
                 });
             } else {
-                const mockData = this.getMockData("No live data available from Fortify SSC");
+                // Make mock data message provider-aware
+                const providerName = (config?.providerType === 'fod') ? 'Fortify on Demand' : 'Fortify SSC';
+                const mockData = this.getMockData(`No live data available from ${providerName}`);
                 this.setState({
                     reportData: mockData,
                     loading: false,
@@ -295,13 +363,23 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
         }
     }
 
+    private getSeverityColor(severity: string): string {
+        switch (severity?.toLowerCase()) {
+            case 'critical': return 'ed1c24';
+            case 'high': return 'ff7800';
+            case 'medium': return 'f6aa58';
+            case 'low': return 'eec845';
+            default: return '666666';
+        }
+    }
+
     private getMockData(reason: string): ReportData {
         return {
             issues: [
                 { 
                     id: 'M1', 
-                    issueInstanceId: 'MOCK_INSTANCE_ID_1',
-                    issueName: 'SQL Injection', 
+                    instanceId: 'MOCK_INSTANCE_ID_1',
+                    name: 'SQL Injection', 
                     severity: 'Critical', 
                     priority: 'Critical', 
                     likelihood: 'Likely', 
@@ -313,12 +391,13 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                     folderGuid: 'b968f72f-cc12-03b5-976e-ad4c13920c21',
                     folderId: 1,
                     folderName: 'Critical',
-                    folderColor: 'ed1c24'
+                    folderColor: 'ed1c24',
+                    provider: 'sample'
                 },
                 { 
                     id: 'M2', 
-                    issueInstanceId: 'MOCK_INSTANCE_ID_2',
-                    issueName: 'Cross-Site Scripting', 
+                    instanceId: 'MOCK_INSTANCE_ID_2',
+                    name: 'Cross-Site Scripting', 
                     severity: 'High', 
                     priority: 'High', 
                     likelihood: 'Possible', 
@@ -330,12 +409,13 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                     folderGuid: '5b50bb77-071d-08ed-fdba-1213fa90ac5a',
                     folderId: 2,
                     folderName: 'High',
-                    folderColor: 'ff7800'
+                    folderColor: 'ff7800',
+                    provider: 'sample'
                 },
                 { 
                     id: 'M3', 
-                    issueInstanceId: 'MOCK_INSTANCE_ID_3',
-                    issueName: 'Weak Cryptographic Hash', 
+                    instanceId: 'MOCK_INSTANCE_ID_3',
+                    name: 'Weak Cryptographic Hash', 
                     severity: 'Medium', 
                     priority: 'Medium', 
                     likelihood: 'Unlikely', 
@@ -347,13 +427,15 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                     folderGuid: 'd5f55910-5f0d-a775-e91f-191d1f5608a4',
                     folderId: 3,
                     folderName: 'Medium',
-                    folderColor: 'f6aa58'
+                    folderColor: 'f6aa58',
+                    provider: 'sample'
                 }
             ],
             appName: 'Sample Application',
             appVersion: '1.0.0',
             scanDate: new Date().toISOString(),
-            totalCount: 3
+            totalCount: 3,
+            provider: 'sample'
         };
     }
 
@@ -368,9 +450,11 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
 
         let filteredIssues = this.state.reportData.issues;
 
-        // Filter by severity (folder name)
+        // Filter by severity (folder name or severity)
         if (this.state.severityFilter) {
-            filteredIssues = filteredIssues.filter(issue => issue.folderName === this.state.severityFilter);
+            filteredIssues = filteredIssues.filter(issue => 
+                (issue.folderName || issue.severity) === this.state.severityFilter
+            );
         }
         
 
@@ -426,33 +510,48 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
 
         const stats = {
             total: filteredIssues.length,
-            critical: filteredIssues.filter(i => i.folderName === 'Critical').length,
-            high: filteredIssues.filter(i => i.folderName === 'High').length,
-            medium: filteredIssues.filter(i => i.folderName === 'Medium').length,
-            low: filteredIssues.filter(i => i.folderName === 'Low').length
+            critical: filteredIssues.filter(i => (i.folderName || i.severity) === 'Critical').length,
+            high: filteredIssues.filter(i => (i.folderName || i.severity) === 'High').length,
+            medium: filteredIssues.filter(i => (i.folderName || i.severity) === 'Medium').length,
+            low: filteredIssues.filter(i => (i.folderName || i.severity) === 'Low').length
         };
 
+
+        // Generate provider-specific title
+        const getReportTitle = (): string => {
+            if (!reportData || !reportData.provider) {
+                return 'Opentext Application Security Report';
+            }
+            switch (reportData.provider.toLowerCase()) {
+                case 'fod':
+                    return 'Fortify on Demand Vulnerability Report';
+                case 'ssc':
+                    return 'Fortify SSC Vulnerability Report';
+                default:
+                    return 'Opentext Application Security Report';
+            }
+        };
 
         return (
             <Card className="fortify-report-card">
                 <div className="fortify-report">
                     <div className="header">
-                        <h2>Fortify SSC Vulnerability Report</h2>
+                        <h2>{getReportTitle()}</h2>
                         <div className="app-info">
                             Application: {reportData.appName} - Version: {reportData.appVersion}
                             {this.state.config && this.state.config.projectVersionId && !isShowingSampleData && (
                                 <span> (<a 
-                                    href={generateProjectVersionUrl(this.state.config.sscUrl, this.state.config.projectVersionId)} 
+                                    href={generateProjectVersionUrl(this.state.config)} 
                                     target="_top" 
                                     rel="noopener noreferrer"
                                     style={{color: '#0078d4', textDecoration: 'none'}}
-                                    title="View project version in Fortify SSC"
+                                    title={`View project version in ${getProviderName(this.state.config.providerType)}`}
                                     onClick={(e) => {
                                         e.preventDefault();
-                                        const url = generateProjectVersionUrl(this.state.config!.sscUrl, this.state.config!.projectVersionId!);
+                                        const url = generateProjectVersionUrl(this.state.config!);
                                         this.handleExternalLinkClick(url);
                                     }}
-                                >View in SSC ↗</a>)</span>
+                                >View in {getProviderName(this.state.config.providerType)} ↗</a>)</span>
                             )} - 
                             Last Updated: {new Date(reportData.scanDate).toLocaleString()} - 
                             Total Issues: {reportData.totalCount}
@@ -461,7 +560,7 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                         {error && <div className="error-banner">⚠️ {error}</div>}
                         {isShowingSampleData && (
                             <div className="error-banner">
-                                📊 This report shows sample data. Live Fortify SSC data was not available during the build. 
+                                📊 This report shows sample data. Live {reportData?.provider ? `Fortify ${reportData.provider === 'fod' ? 'on Demand' : 'SSC'}` : 'Fortify'} data was not available during the build.
                                 Check the build logs for connection details.
                             </div>
                         )}
@@ -511,9 +610,12 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                     </div>
 
                     <div style={{marginBottom: '20px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '14px'}}>
-                        <strong>Classification:</strong> Security Auditor View (Fortify Default)
+                        <strong>Provider:</strong> {getProviderName(this.state.config?.providerType)}
+                        {(this.state.config?.providerType || 'ssc') === 'ssc' && (
+                            <><br /><strong>Classification:</strong> Security Auditor View (Fortify Default)</>
+                        )}
                         <br />
-                        <em>Issues are classified into Critical, High, Medium, and Low folders based on Fortify's security impact analysis.</em>
+                        <em>Issues are classified into Critical, High, Medium, and Low severity levels based on Fortify's security impact analysis.</em>
                     </div>
                     
                     <table className="issues-table">
@@ -536,30 +638,30 @@ class FortifyReportPanel extends React.Component<FortifyReportPanelProps, Fortif
                             ) : (
                                 filteredIssues.map(issue => (
                                     <tr key={issue.id}>
-                                        <td>{issue.category || issue.issueName}</td>
+                                        <td>{issue.category || issue.name || issue.issueName}</td>
                                         <td>
                                             {this.state.config && this.state.config.projectVersionId && !isShowingSampleData ? (
                                                 <a
-                                                    href={generateIssueUrl(this.state.config.sscUrl, this.state.config.projectVersionId, issue.issueInstanceId)}
+                                                    href={generateIssueUrl(this.state.config, issue)}
                                                     target="_top"
                                                     rel="noopener noreferrer"
                                                     style={{color: '#0078d4', textDecoration: 'none'}}
-                                                    title="View issue details in Fortify SSC"
+                                                    title={`View issue details in ${getProviderName(this.state.config?.providerType)}`}
                                                     onClick={(e) => {
                                                         e.preventDefault();
-                                                        const url = generateIssueUrl(this.state.config!.sscUrl, this.state.config!.projectVersionId!, issue.issueInstanceId);
+                                                        const url = generateIssueUrl(this.state.config!, issue);
                                                         this.handleExternalLinkClick(url);
                                                     }}
                                                 >
-                                                    {issue.primaryLocation}:{issue.lineNumber}
+                                                    {issue.primaryLocation || 'Unknown Location'}
                                                 </a>
                                             ) : (
-                                                `${issue.primaryLocation}:${issue.lineNumber}`
+                                                issue.primaryLocation || 'Unknown Location'
                                             )}
                                         </td>
                                         <td>{issue.kingdom || 'N/A'}</td>
-                                        <td className={`severity-cell ${issue.folderName}`} style={{color: `#${issue.folderColor}`}}>
-                                            {issue.folderName}
+                                        <td className={`severity-cell ${issue.folderName || issue.severity}`} style={{color: `#${issue.folderColor || this.getSeverityColor(issue.severity)}`}}>
+                                            {issue.folderName || issue.severity}
                                         </td>
                                         <td className="tag-cell">
                                             {(issue.likelihood === 'Likely' || issue.confidence === 'High') && (
