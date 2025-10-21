@@ -2,8 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
   "id": "53ab706a-68b4-4acc-b807-eaffedfab2b0",
   "name": "FortifyReport",
-  "friendlyName": "Fortify SSC Report",
-  "description": "Fetches and displays Fortify SSC vulnerability reports in Azure DevOps build results",
+  "friendlyName": "Fortify Security Report",
+  "description": "Fetches and displays Fortify vulnerability reports from SSC or on Demand in Azure DevOps build results",
   "author": "Santhosh Kumar",
   "helpUrl": "https://github.com/your-org/fortify-report-extension",
   "category": "Test",
@@ -13,16 +13,26 @@
   ],
   "demands": [],
   "version": {
-    "Major": 2,
-    "Minor": 0,
+    "Major": 17,
+    "Minor": 1,
     "Patch": 0
   },
   "minimumAgentVersion": "2.144.0",
-  "instanceNameFormat": "Fortify SSC Report: $(appName) v$(appVersion)",
+  "instanceNameFormat": "Fortify Report: $(appName) v$(appVersion)",
   "groups": [
     {
-      "name": "connection",
+      "name": "provider",
+      "displayName": "Fortify Provider",
+      "isExpanded": true
+    },
+    {
+      "name": "sscConnection",
       "displayName": "Fortify SSC Connection",
+      "isExpanded": true
+    },
+    {
+      "name": "fodConnection",
+      "displayName": "Fortify on Demand Connection",
       "isExpanded": true
     },
     {
@@ -38,11 +48,25 @@
   ],
   "inputs": [
     {
+      "name": "providerType",
+      "type": "pickList",
+      "label": "Fortify Provider",
+      "required": true,
+      "defaultValue": "ssc",
+      "groupName": "provider",
+      "helpMarkDown": "Select your Fortify provider type",
+      "options": {
+        "ssc": "Fortify Software Security Center (SSC)",
+        "fod": "Fortify on Demand (FoD)"
+      }
+    },
+    {
       "name": "sscUrl",
       "type": "string",
       "label": "Fortify SSC URL",
       "required": true,
-      "groupName": "connection",
+      "groupName": "sscConnection",
+      "visibleRule": "providerType = ssc",
       "helpMarkDown": "The URL of your Fortify SSC instance (e.g., https://your-ssc-instance.com)"
     },
     {
@@ -50,8 +74,47 @@
       "type": "string",
       "label": "CI Token",
       "required": true,
-      "groupName": "connection",
+      "groupName": "sscConnection",
+      "visibleRule": "providerType = ssc",
       "helpMarkDown": "Your Fortify SSC CI token for authentication. **Tip:** Store this in a secure variable or Azure Key Vault for security."
+    },
+    {
+      "name": "fodUrl",
+      "type": "pickList",
+      "label": "Fortify on Demand API URL",
+      "required": true,
+      "defaultValue": "https://api.ams.fortify.com",
+      "groupName": "fodConnection",
+      "visibleRule": "providerType = fod",
+      "helpMarkDown": "The URL of your Fortify on Demand API instance. Select from common regions or enter a custom URL.",
+      "options": {
+        "https://api.ams.fortify.com": "AMS (America)",
+        "https://api.emea.fortify.com": "EMEA (Europe, Middle East, Africa)",
+        "https://api.apac.fortify.com": "APAC (Asia-Pacific)",
+        "https://api.sgp.fortify.com": "SGP (Singapore)",
+        "https://api.fed.fortifygov.com": "FedRAMP"
+      },
+      "properties": {
+        "EditableOptions": "True"
+      }
+    },
+    {
+      "name": "fodApiKey",
+      "type": "string",
+      "label": "API Key",
+      "required": true,
+      "groupName": "fodConnection",
+      "visibleRule": "providerType = fod",
+      "helpMarkDown": "Your Fortify on Demand API key for authentication. **Tip:** Store this in a secure variable or Azure Key Vault for security."
+    },
+    {
+      "name": "fodApiSecret",
+      "type": "string",
+      "label": "API Secret",
+      "required": true,
+      "groupName": "fodConnection",
+      "visibleRule": "providerType = fod",
+      "helpMarkDown": "Your Fortify on Demand API secret for authentication. **Tip:** Store this in a secure variable or Azure Key Vault for security."
     },
     {
       "name": "appName",
@@ -59,7 +122,7 @@
       "label": "Application Name",
       "required": true,
       "groupName": "application",
-      "helpMarkDown": "Name of the application in Fortify SSC. This must match exactly with the application name in SSC."
+      "helpMarkDown": "Name of the application in Fortify. This must match exactly with the application name in your Fortify provider."
     },
     {
       "name": "appVersion",
@@ -67,7 +130,7 @@
       "label": "Application Version",
       "required": true,
       "groupName": "application",
-      "helpMarkDown": "Version of the application in Fortify SSC. This must match exactly with the version name in SSC."
+      "helpMarkDown": "Version/Release of the application in Fortify. This must match exactly with the version/release name in your Fortify provider."
     },
     {
       "name": "maxIssues",
@@ -76,7 +139,7 @@
       "required": false,
       "defaultValue": "10000",
       "groupName": "advanced",
-      "helpMarkDown": "Maximum number of issues to fetch from Fortify SSC. Default is 10,000. Increase this value if your application has more issues than the default limit."
+      "helpMarkDown": "Maximum number of issues to fetch from Fortify. Default is 10,000. Increase this value if your application has more issues than the default limit."
     },
     {
       "name": "skipValidation",
@@ -85,7 +148,7 @@
       "required": false,
       "defaultValue": false,
       "groupName": "advanced",
-      "helpMarkDown": "Skip validation of Fortify SSC connection and application/version during task execution. Enable this if you're experiencing network issues or want faster execution."
+      "helpMarkDown": "Skip validation of Fortify connection and application/version during task execution. Enable this if you're experiencing network issues or want faster execution."
     }
   ],
   "execution": {
@@ -94,10 +157,12 @@
     }
   },
   "messages": {
-    "ConnectionFailed": "Failed to connect to Fortify SSC: %s",
-    "ApplicationNotFound": "Application '%s' not found in Fortify SSC",
-    "VersionNotFound": "Version '%s' not found for application '%s'",
+    "ConnectionFailed": "Failed to connect to Fortify: %s",
+    "ApplicationNotFound": "Application '%s' not found in Fortify",
+    "VersionNotFound": "Version/Release '%s' not found for application '%s'",
     "ValidationSkipped": "Connection validation skipped",
-    "ReportConfigured": "Fortify report configured successfully for %s v%s"
+    "ReportConfigured": "Fortify report configured successfully for %s v%s",
+    "ProviderNotSpecified": "Provider type not specified",
+    "InvalidProvider": "Invalid provider type: %s"
   }
 }

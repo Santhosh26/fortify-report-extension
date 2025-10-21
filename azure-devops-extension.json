@@ -1,10 +1,10 @@
 {
     "manifestVersion": 1,
     "id": "fortify-report-extension",
-    "name": "Fortify SSC Report",
-    "version": "12.0",
+    "name": "Fortify Multi-Platform Report",
+    "version": "17.1",
     "publisher": "SanthoshKumar",
-    "description": "A detailed Fortify SSC vulnerability report for Azure DevOps",
+    "description": "A detailed Fortify vulnerability report for Azure DevOps supporting both SSC and on Demand",
     "public": true,
     "categories": ["Azure Pipelines"],
     "icons": {
@@ -27,10 +27,10 @@
         {
             "id": "fortify-report-tab",
             "type": "ms.vss-build-web.build-results-tab",
-            "description": "Display Fortify SSC vulnerability report in Azure Pipelines",
+            "description": "Display Fortify vulnerability report in Azure Pipelines",
             "targets": ["ms.vss-build-web.build-results-view"],
             "properties": {
-                "name": "Fortify Report",
+                "name": "Opentext Application Security",
                 "uri": "dist/tabContent.html",
                 "registeredObjectId": "registerBuild",
                 "supportsTasks": ["53ab706a-68b4-4acc-b807-eaffedfab2b0"],
@@ -43,7 +43,7 @@
             "targets": ["ms.vss-distributed-task.tasks"],
             "properties": {
                 "name": "task",
-                "displayName": "Fortify SSC Report",
+                "displayName": "Fortify Security Report",
                 "icons": {
                     "default": "./images/task-icon.png" 
                   }
