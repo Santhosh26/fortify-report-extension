@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "id": "fortify-report-extension",
     "name": "Fortify Multi-Platform Report",
-    "version": "17.1",
+    "version": "17.2",
     "publisher": "SanthoshKumar",
     "description": "A detailed Fortify vulnerability report for Azure DevOps supporting both SSC and on Demand",
     "public": true,
