@@ -1,6 +1,6 @@
 {
   "name": "fortify-report-extension",
-  "version": "17.1",
+  "version": "17.2",
   "description": "Fortify Multi-Platform Report for Azure DevOps",
   "private": true,
   "author": "Santhosh Kumar",
